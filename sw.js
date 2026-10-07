@@ -1,6 +1,7 @@
 /* 知行音乐 Service Worker v1 */
-const CACHE = "zmusic-v18";
-const SHELL = ["./","./index.html","./style.css","./app.js","./catalog.js","./manifest.json","./icon.svg"];
+const CACHE = "zmusic-v19";
+// 注意：catalog.js 不预缓存（走网络优先），避免大文件导致安装失败
+const SHELL = ["./","./index.html","./style.css","./app.js","./manifest.json","./icon.svg"];
 
 // NAS 认证头（由页面 postMessage 传入，存在内存）
 let DAV_AUTH = "";
