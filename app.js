@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v8.2 2026-10-07";
+const APP_VER = "v8.3 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -732,6 +732,21 @@ saveCfg(); pushAuthToSW();
 $("connStatus").className="hint"; $("connStatus").textContent="已保存";};
 $("testConn").onclick=testConn;
 $("clearHist").onclick=()=>{ if(confirm("清除本机所有播放记录？")){ hist={}; saveHist(); renderHome();}};
+$("forceUpdate").onclick=async ()=>{
+  if(!confirm("将清除本地缓存并重新加载最新版，继续？")) return;
+  toast("正在更新…", "", 0);
+  try{
+    if("serviceWorker" in navigator){
+      const regs=await navigator.serviceWorker.getRegistrations();
+      for(const r of regs) await r.unregister();
+    }
+    if("caches" in window){
+      const keys=await caches.keys();
+      for(const k of keys) await caches.delete(k);
+    }
+  }catch(e){}
+  location.reload();
+};
 $("cfgDav").value=cfg.dav; $("cfgUser").value=cfg.user; $("cfgPass").value=cfg.pass||"";
 $("appVer").textContent=APP_VER;
 }
