@@ -23,20 +23,30 @@
     <button id="carBtn" title="车载模式">🚗</button>
   </header>
 
-  <!-- 推荐页 -->
+  <!-- 推荐页（音乐馆） -->
   <section id="view-home" class="view active">
-    <div class="block">
-      <h2>继续听</h2>
-      <div id="recentList" class="songlist"><p class="empty">还没有播放记录，听几首歌就记住了</p></div>
+    <div class="qq-banner">
+      <div class="qq-greet" id="qqGreet">音乐馆</div>
+      <div class="qq-sub" id="qqStats">-</div>
     </div>
-    <div class="block">
+    <div class="qq-quick">
+      <button data-go="rec">❤️<span>猜你喜欢</span></button>
+      <button data-go="recent">🕘<span>最近播放</span></button>
+      <button data-go="shuffle">🎲<span>随机听</span></button>
+      <button data-go="folders">📁<span>我的合集</span></button>
+    </div>
+    <div class="block" id="blockFolders">
+      <h2>我的合集</h2>
+      <div id="folderList" class="qq-grid"></div>
+    </div>
+    <div class="block" id="blockRec">
       <h2>猜你喜欢 <button id="refreshRec" class="mini-btn">换一批</button></h2>
       <div id="recList" class="songlist"><p class="empty">多听几首，推荐越准</p></div>
       <button id="recMore" class="more-btn" style="display:none"></button>
     </div>
-    <div class="block">
-      <h2>合集</h2>
-      <div id="folderList" class="folderlist"></div>
+    <div class="block" id="blockRecent">
+      <h2>继续听</h2>
+      <div id="recentList" class="songlist"><p class="empty">还没有播放记录，听几首歌就记住了</p></div>
     </div>
   </section>
 
@@ -89,24 +99,36 @@
     <button id="miniNext">⏭</button>
   </div>
 
-  <!-- 全屏播放器 -->
+  <!-- 全屏播放器（QQ音乐风） -->
   <div id="fullPlayer" style="display:none">
+    <div id="fpBg"></div>
     <div class="fp-head">
       <button id="closePlayer">﹀</button>
+      <div class="fp-titles"><div id="fpTitle">-</div><div id="fpArtist">-</div></div>
       <button id="fpTab">详情</button>
     </div>
-    <img id="fpCoverImg" alt="封面" style="display:none">
-    <div id="fpCoverPh">🎵</div>
-    <div id="fpTitle">-</div>
-    <div id="fpArtist">-</div>
+    <div class="fp-cover-wrap">
+      <img id="fpCoverImg" alt="封面" style="display:none">
+      <div id="fpCoverPh">🎵</div>
+    </div>
+    <div class="fp-actions">
+      <button id="fpLike" title="我喜欢">♡</button>
+      <button id="fpDl" title="详情">ⓘ</button>
+      <button id="fpShare" title="分享">↗</button>
+    </div>
     <div id="fpLyrics"></div>
     <div id="fpDetail" style="display:none"></div>
-    <input id="seek" type="range" min="0" max="1000" value="0">
-    <div id="timeRow"><span id="tCur">0:00</span><span id="tDur">0:00</span></div>
+    <div class="fp-progress">
+      <span id="tCur">0:00</span>
+      <input id="seek" type="range" min="0" max="1000" value="0">
+      <span id="tDur">0:00</span>
+    </div>
     <div id="fpControls">
+      <button id="fpMode" title="播放模式">🔁</button>
       <button id="fpPrev">⏮</button>
       <button id="fpToggle" class="big">⏸</button>
       <button id="fpNext">⏭</button>
+      <button id="fpList" title="播放列表">☰</button>
     </div>
     <p id="playStatus" class="hint"></p>
   </div>
