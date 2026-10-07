@@ -190,17 +190,32 @@ let queue=[], qi=-1, objCache={}, blobCache={}, loading=false;
 async function blobUrl(song){
 if(objCache[song.p]) return objCache[song.p];
 const url=songUrl(song);
+let lastErr=null;
+for(let attempt=0;attempt<3;attempt++){
+try{
 const r=await fetch(url,{headers:{Authorization:authHeader()}});
 if(r.status===401) throw {code:401,msg:"账号或密码不对（401），去设置页检查"};
+if(r.status===502||r.status===503||r.status===504){
+  lastErr={code:r.status,msg:"NAS 返回 "+r.status};
+  toast("网络抖动，正在重试…("+(attempt+1)+"/3)");
+  await new Promise(r2=>setTimeout(r2,1500)); continue;
+}
 if(!r.ok) throw {code:r.status,msg:"NAS 返回 "+r.status};
 const blob=await r.blob();
 const ou=URL.createObjectURL(blob);
 objCache[song.p]=ou; blobCache[song.p]=blob;
-if(Object.keys(objCache).length>8){ // 只缓存最近8首
+if(Object.keys(objCache).length>8){
 const old=Object.keys(objCache)[0];
 URL.revokeObjectURL(objCache[old]); delete objCache[old]; delete blobCache[old];
 }
 return ou;
+}catch(e){
+if(e&&e.code===401) throw e;
+if(e instanceof TypeError){ lastErr=e; await new Promise(r2=>setTimeout(r2,1500)); continue; }
+throw e;
+}
+}
+throw lastErr||{code:0,msg:"重试3次仍失败"};
 }
 
 async function playAt(i, autoplay=true){
