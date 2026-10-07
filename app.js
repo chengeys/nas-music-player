@@ -41,6 +41,132 @@ clearTimeout(toastTimer);
 if(ms>0) toastTimer=setTimeout(()=>{ el.style.display="none"; }, ms);
 }
 function hideToast(){ $("toast").style.display="none"; clearTimeout(toastTimer); }
+
+/* ---------- ID3 歌词/封面解析 ---------- */
+function decodeTextBytes(bytes, enc){
+  try{
+    if(enc===3) return new TextDecoder("utf-8").decode(bytes);
+    if(enc===1) return new TextDecoder("utf-16").decode(bytes);
+    if(enc===2) return new TextDecoder("utf-16be").decode(bytes);
+  }catch(e){}
+  let s=""; for(let i=0;i<bytes.length;i++) s+=String.fromCharCode(bytes[i]);
+  return s;
+}
+function findTerm(bytes, enc, from){
+  if(enc===1||enc===2){
+    for(let i=from;i+1<bytes.length;i+=2) if(bytes[i]===0&&bytes[i+1]===0) return i;
+    return -1;
+  }
+  for(let i=from;i<bytes.length;i++) if(bytes[i]===0) return i;
+  return -1;
+}
+function parseID3(buf){
+  const out={lyrics:null, coverUrl:null};
+  try{
+    const u8=new Uint8Array(buf);
+    if(u8.length<10||u8[0]!==0x49||u8[1]!==0x44||u8[2]!==0x33) return out;
+    const ver=u8[3];
+    const sz=(u8[6]<<21)|(u8[7]<<14)|(u8[8]<<7)|u8[9];
+    let pos=10; const end=Math.min(10+sz, u8.length);
+    while(pos+10<=end){
+      const fid=String.fromCharCode(u8[pos],u8[pos+1],u8[pos+2],u8[pos+3]);
+      if(!/^[A-Z0-9]{4}$/.test(fid)) break;
+      let fsz;
+      if(ver===4) fsz=(u8[pos+4]<<21)|(u8[pos+5]<<14)|(u8[pos+6]<<7)|u8[pos+7];
+      else fsz=(u8[pos+4]<<24)|(u8[pos+5]<<16)|(u8[pos+6]<<8)|u8[pos+7];
+      const fs=pos+10;
+      if(fsz<=0||fs+fsz>u8.length) break;
+      if((fid==="USLT"&&!out.lyrics)||(fid==="APIC"&&!out.coverUrl)){
+        const fd=u8.slice(fs,fs+fsz), enc=fd[0];
+        if(fid==="USLT"){
+          const rest=fd.slice(4), ni=findTerm(rest,enc,0);
+          const tb=ni>=0?rest.slice(ni+(enc===1||enc===2?2:1)):rest;
+          const txt=decodeTextBytes(tb,enc).replace(/^\uFEFF/,"");
+          if(txt.trim()) out.lyrics=txt;
+        }else{
+          let p=1; const mi=fd.indexOf(0,p);
+          const mime=decodeTextBytes(fd.slice(p,mi<0?p:mi),0)||"image/jpeg";
+          p=(mi<0?p:mi)+2;
+          const di=findTerm(fd,enc,p);
+          p=di<0?fd.length:di+(enc===1||enc===2?2:1);
+          if(p<fd.length){
+            out.coverUrl=URL.createObjectURL(new Blob([fd.slice(p)],{type:mime}));
+          }
+        }
+      }
+      pos=fs+fsz;
+      if(out.lyrics&&out.coverUrl) break;
+    }
+  }catch(e){}
+  return out;
+}
+function parseLRC(text){
+  const lines=[], re=/\[(\d+):(\d+)(?:[.:](\d+))?\]/g;
+  text.split(/\r?\n/).forEach(ln=>{
+    const tags=[]; let m; re.lastIndex=0;
+    while((m=re.exec(ln))){
+      tags.push((+m[1])*60+(+m[2])+(m[3]?(+m[3])/(m[3].length===3?1000:100):0));
+    }
+    const txt=ln.replace(/\[.*?\]/g,"").trim();
+    if(tags.length&&txt) tags.forEach(t=>lines.push({t,txt}));
+    else if(txt&&!tags.length) lines.push({t:-1,txt});
+  });
+  lines.sort((a,b)=>a.t-b.t);
+  return lines;
+}
+let curLyrics=[], curLrcIdx=-1, metaCache={};
+async function getSongMeta(song){
+  if(metaCache[song.p]) return metaCache[song.p];
+  const m={lyrics:null,coverUrl:null};
+  try{
+    const blob=blobCache[song.p];
+    if(blob){
+      const head=await blob.slice(0,2*1024*1024).arrayBuffer();
+      const id3=parseID3(head);
+      m.coverUrl=id3.coverUrl;
+      if(id3.lyrics) m.lyrics=parseLRC(id3.lyrics);
+    }
+  }catch(e){}
+  metaCache[song.p]=m;
+  return m;
+}
+function renderLyrics(){
+  const el=$("fpLyrics"); el.innerHTML=""; curLrcIdx=-1;
+  if(!curLyrics.length){
+    el.innerHTML='<div class="lrc-line">这首歌没有内嵌歌词</div>'; return;
+  }
+  curLyrics.forEach(l=>{
+    const d=document.createElement("div");
+    d.className="lrc-line"+(l.t<0?" passed":"");
+    d.textContent=l.txt||" "; el.appendChild(d);
+  });
+  el.scrollTop=0;
+}
+function syncLyrics(){
+  if(!curLyrics.length) return;
+  const t=audio.currentTime; let idx=-1;
+  for(let i=0;i<curLyrics.length;i++){
+    if(curLyrics[i].t<0) continue;
+    if(curLyrics[i].t<=t) idx=i; else break;
+  }
+  if(idx===curLrcIdx||idx<0) return;
+  const el=$("fpLyrics"), ch=el.children;
+  if(curLrcIdx>=0&&ch[curLrcIdx]) ch[curLrcIdx].className="lrc-line passed";
+  curLrcIdx=idx;
+  if(ch[idx]){
+    ch[idx].className="lrc-line active";
+    ch[idx].scrollIntoView({block:"center",behavior:"smooth"});
+  }
+}
+function renderDetail(s){
+  const fmt=(s.p.split(".").pop()||"").toUpperCase();
+  $("fpDetail").innerHTML=
+    "<div><b>歌名：</b>"+escapeHtml(dispTitle(s))+"</div>"+
+    "<div><b>歌手：</b>"+escapeHtml(dispArtist(s)||"未知")+"</div>"+
+    "<div><b>合集：</b>"+escapeHtml(s.f||"-")+"</div>"+
+    "<div><b>格式：</b>"+escapeHtml(fmt)+"</div>";
+}
+function escapeHtml(x){ return (x||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function songKey(s){ return s.p;}
 function dispTitle(s){ return s.t || s.p.split("/").pop().replace(/\.[^.]+$/,"");}
 function dispArtist(s){ return s.a || "未知歌手";}
@@ -59,7 +185,7 @@ hist[k]=h; saveHist();
 /* ---------- 音频播放 ---------- */
 const audio = new Audio();
 audio.preload="auto";
-let queue=[], qi=-1, objCache={}, loading=false;
+let queue=[], qi=-1, objCache={}, blobCache={}, loading=false;
 
 async function blobUrl(song){
 if(objCache[song.p]) return objCache[song.p];
@@ -69,10 +195,10 @@ if(r.status===401) throw {code:401,msg:"账号或密码不对（401），去设�
 if(!r.ok) throw {code:r.status,msg:"NAS 返回 "+r.status};
 const blob=await r.blob();
 const ou=URL.createObjectURL(blob);
-objCache[song.p]=ou;
+objCache[song.p]=ou; blobCache[song.p]=blob;
 if(Object.keys(objCache).length>8){ // 只缓存最近8首
 const old=Object.keys(objCache)[0];
-URL.revokeObjectURL(objCache[old]); delete objCache[old];
+URL.revokeObjectURL(objCache[old]); delete objCache[old]; delete blobCache[old];
 }
 return ou;
 }
@@ -88,6 +214,14 @@ if(autoplay) await audio.play();
 logPlay(song,false);
 renderPlayer(); updateMediaSession(song);
 setPlayStatus(""); hideToast();
+// 歌词+封面（不阻塞播放）
+curLyrics=[]; renderLyrics();
+$("fpCoverImg").style.display="none"; $("fpCoverPh").style.display="block";
+getSongMeta(song).then(m=>{
+  if(queue[qi]!==song) return;
+  curLyrics=m.lyrics||[]; renderLyrics();
+  if(m.coverUrl){ $("fpCoverImg").src=m.coverUrl; $("fpCoverImg").style.display="block"; $("fpCoverPh").style.display="none"; }
+});
 }catch(e){
 loading=false;
 let msg="";
@@ -121,6 +255,7 @@ audio.addEventListener("pause",syncPlayBtns);
 audio.addEventListener("timeupdate",()=>{
 if(audio.duration){ $("seek").value=Math.floor(audio.currentTime/audio.duration*1000);
 $("tCur").textContent=fmtTime(audio.currentTime);}
+syncLyrics();
 });
 audio.addEventListener("loadedmetadata",()=>{ $("tDur").textContent=fmtTime(audio.duration);});
 
@@ -274,7 +409,7 @@ $("miniTitle").textContent=dispTitle(s);
 $("miniArtist").textContent=dispArtist(s);
 $("fpTitle").textContent=dispTitle(s);
 $("fpArtist").textContent=dispArtist(s);
-$("fpFolder").textContent=s.f||"";
+renderDetail(s);
 syncPlayBtns();
 }
 function syncPlayBtns(){
@@ -317,10 +452,17 @@ $("carBtn").style.background=document.body.classList.contains("car")?"var(--acc)
 // 播放器
 $("miniToggle").onclick=e=>{e.stopPropagation();togglePlay();};
 $("miniNext").onclick=e=>{e.stopPropagation();next();};
-$("miniPlayer").onclick=()=>{ $("fullPlayer").style.display="flex";};
+$("miniPlayer").onclick=()=>{ $("fullPlayer").style.display="flex";
+$("fpDetail").style.display="none"; $("fpLyrics").style.display="block"; $("fpTab").textContent="详情";};
 $("closePlayer").onclick=()=>{ $("fullPlayer").style.display="none";};
 $("fpToggle").onclick=togglePlay; $("fpNext").onclick=()=>next(); $("fpPrev").onclick=prev;
 $("seek").addEventListener("input",()=>{ if(audio.duration) audio.currentTime=$("seek").value/1000*audio.duration;});
+$("fpTab").onclick=()=>{
+  const showDetail=$("fpDetail").style.display==="none";
+  $("fpDetail").style.display=showDetail?"block":"none";
+  $("fpLyrics").style.display=showDetail?"none":"block";
+  $("fpTab").textContent=showDetail?"歌词":"详情";
+};
 // 设置
 $("saveCfg").onclick=()=>{ cfg.dav=$("cfgDav").value.trim()||cfg.dav;
 cfg.user=$("cfgUser").value.trim()||"ai"; cfg.pass=$("cfgPass").value;
