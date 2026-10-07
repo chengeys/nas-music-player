@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v8.0 2026-10-07";
+const APP_VER = "v8.1 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -299,8 +299,13 @@ const cached=objCache[song.p];
 audioPlaying=false;
 if(cached){ audio.src=cached; song._swapped=true; }
 else { audio.src=songUrl(song); }
+// play() 越早调越好（锁屏自动连播就靠这一手）
+let playPromise=null;
+if(autoplay){
+  try{ playPromise=audio.play(); }catch(e){ playPromise=Promise.reject(e); }
+}
 loading=true; setPlayStatus("正在加载…");
-toast("正在加载《"+dispTitle(song)+"》…");
+if(autoplay) toast("正在加载《"+dispTitle(song)+"》…");
 curLyrics=[]; renderLyrics();
 $("fpCoverImg").style.display="none"; $("fpCoverPh").style.display="block";
 $("miniCover").classList.add("hide");
@@ -318,13 +323,11 @@ getSongMeta(song).then(m=>{
 });
 // 后台下载完整文件，好了就无缝切到本地（锁屏也能播）
 blobUrl(song).then(()=>trySwapToBlob(song)).catch(()=>{});
-if(autoplay){
-  const pr=audio.play();
-  if(pr && pr.then){
-    pr.then(()=>{ loading=false; setPlayStatus(""); hideToast(); prefetchNext(); })
-      .catch(e=>playFallback(song,e));
-  } else { loading=false; hideToast(); prefetchNext(); }
-}else{ loading=false; hideToast(); }
+if(playPromise && playPromise.then){
+  playPromise.then(()=>{ loading=false; setPlayStatus(""); hideToast(); prefetchNext(); ensureQueue(); })
+    .catch(e=>playFallback(song,e));
+}else if(autoplay){ loading=false; hideToast(); prefetchNext(); ensureQueue(); }
+else { loading=false; hideToast(); }
 }
 // 直链失败（如 SW 还没拿到凭据）→ 回退到 fetch+blob
 audio.addEventListener("error",()=>{
@@ -367,10 +370,21 @@ if(qi>=queue.length-1){
   if(recs.length){
     queue=queue.concat(recs);
     if(auto) toast("已接上推荐歌单 ♪", "", 2500);
+    // 刚接上的第一首立即预取
+    const ns=queue[qi+1];
+    if(ns && !objCache[ns.p]){ ns._prefetching=true; blobUrl(ns).catch(()=>{}).finally(()=>{ns._prefetching=false;}); getSongMeta(ns).catch(()=>{}); }
   }
 }
 const n=(qi+1)%queue.length;
 playAt(n);
+}
+/* 队列剩3首时提前接推荐，保证预取时间 */
+function ensureQueue(){
+  if(!queue.length) return;
+  if(queue.length-qi<=3){
+    const recs=recommend(20).filter(s=>queue.indexOf(s)<0);
+    if(recs.length) queue=queue.concat(recs);
+  }
 }
 function prev(){
 if(!queue.length) return;
