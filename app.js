@@ -264,7 +264,7 @@ audio.addEventListener("error",()=>{
 });
 async function playFallback(song, origErr){
   if(queue[qi]!==song) return;
-  toast("换备用方式加载…");
+  toast("正在加载《"+dispTitle(song)+"》…");
   try{
     audio.src=await blobUrl(song);
     await audio.play();
@@ -369,6 +369,7 @@ function doSearch(autoplay){
 const q=$("q").value.trim();
 const list=searchSongs(q);
 renderSongs($("searchList"), list, true);
+window.scrollTo(0,0);
 if(autoplay && list.length){ queue=list.slice(); playAt(0);}
 else if(autoplay){ $("voiceHint").textContent+="（曲库里没找到，换个说法试试）";}
 }
@@ -445,7 +446,8 @@ const b=document.createElement("button"); b.className="folder";
 b.innerHTML=`<b>${f.c}</b><span></span>`;
 b.querySelector("span").textContent=f.n;
 b.onclick=()=>{ const ss=CATALOG.filter(s=>s.f===f.n); queue=ss.slice(); playAt(0);
-$("q").value=""; showView("view-search"); renderSongs($("searchList"),ss,true);};
+$("q").value=""; showView("view-search"); renderSongs($("searchList"),ss,true);
+window.scrollTo(0,0);};
 fl.appendChild(b);
 });
 $("libCount").textContent=CATALOG.length;
