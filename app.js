@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v8.1 2026-10-07";
+const APP_VER = "v8.2 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -293,7 +293,7 @@ document.addEventListener("visibilitychange",()=>{
 function playAt(i, autoplay=true){
 if(i<0||i>=queue.length) return;
 qi=i; const song=queue[qi]; fbRetry=false;
-song._swapped=false;
+song._swapped=false; song._preSwitched=false;
 // 有预取好的本地文件就直接用（锁屏连播可靠），否则走流式秒播
 const cached=objCache[song.p];
 audioPlaying=false;
@@ -400,7 +400,52 @@ $("tCur").textContent=fmtTime(audio.currentTime);
 const pct=(audio.currentTime/audio.duration*100);
 $("miniProgFill").style.width=pct+"%"; $("miniProgKnob").style.left=pct+"%";}
 syncLyrics();
+preSwitch();
 });
+/* 提前切歌：结束前2秒、还在出声时切下一首，iOS 当连续播放放行 */
+function preSwitch(){
+  const song=queue[qi]; if(!song || song._preSwitched) return;
+  if(!audio.duration || audio.duration<10) return;
+  const remain=audio.duration-audio.currentTime;
+  if(remain>2.5 || remain<0.3) return;
+  // 队尾提前接推荐，保证有下一首
+  if(qi>=queue.length-1){
+    const recs=recommend(20).filter(s=>queue.indexOf(s)<0);
+    if(recs.length) queue=queue.concat(recs);
+  }
+  const ni=(qi+1)%queue.length;
+  const ns=queue[ni];
+  if(!ns || ns===song) return;
+  const blob=objCache[ns.p];
+  if(!blob) return;
+  song._preSwitched=true;
+  logPlay(song,true);
+  qi=ni; ns._swapped=true;
+  audioPlaying=false;
+  audio.src=blob;
+  const pr=audio.play();
+  if(pr&&pr.then){
+    pr.then(()=>{
+      loading=false; setPlayStatus(""); hideToast();
+      curLyrics=[]; renderLyrics();
+      $("fpCoverImg").style.display="none"; $("fpCoverPh").style.display="block";
+      $("miniCover").classList.add("hide");
+      $("fpBg").style.backgroundImage="none";
+      renderPlayer(); updateMediaSession(ns); logPlay(ns,false);
+      getSongMeta(ns).then(m=>{
+        if(queue[qi]!==ns) return;
+        curLyrics=m.lyrics||[]; renderLyrics();
+        if(m.coverUrl){
+          $("fpCoverImg").src=m.coverUrl; $("fpCoverImg").style.display="block"; $("fpCoverPh").style.display="none";
+          $("miniCover").src=m.coverUrl; $("miniCover").classList.remove("hide");
+          $("fpBg").style.backgroundImage=`url("${m.coverUrl}")`;
+        }
+        updateLikeBtn(ns);
+      });
+      prefetchNext(); ensureQueue();
+    }).catch(()=>{ song._preSwitched=false; });
+  } else { song._preSwitched=false; }
+}
 audio.addEventListener("loadedmetadata",()=>{ $("tDur").textContent=fmtTime(audio.duration);});
 
 /* ---------- 锁屏/耳机控制 ---------- */
