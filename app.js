@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v8.4 2026-10-07";
+const APP_VER = "v8.5 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -217,6 +217,8 @@ hist[k]=h; saveHist();
 
 /* ---------- 音频播放 ---------- */
 const audio = new Audio();
+audio.preload="auto";
+audio.autoplay=true; // 换源后自动播，iOS 当连续播放处理
 audio.preload="auto";
 let queue=[], qi=-1, objCache={}, blobCache={}, loading=false;
 
@@ -494,6 +496,7 @@ const rec=new SR();
 rec.lang="zh-CN"; rec.interimResults=false; rec.maxAlternatives=1;
 const btn=$("micBtn"); btn.classList.add("listening");
 $("voiceHint").style.display="block"; $("voiceHint").textContent="正在听…请说歌名或歌手";
+let retried=false;
 rec.onresult=e=>{
 const txt=e.results[0][0].transcript||"";
 btn.classList.remove("listening");
@@ -504,6 +507,12 @@ doSearch(true);
 };
 rec.onerror=e=>{ btn.classList.remove("listening");
 const err=e.error||"unknown";
+// iOS 经常误报 aborted，自动重试一次
+if(err==="aborted" && !retried){
+  retried=true;
+  setTimeout(()=>{ try{ btn.classList.add("listening"); rec.start(); }catch(_){} }, 300);
+  return;
+}
 let msg="没听清，再试一次，或用键盘输入。";
 if(err==="not-allowed"||err==="service-not-allowed"){
   msg="麦克风权限被拒：去 iPhone 设置 → Safari（或知行音乐）→ 允许麦克风，再试。";
@@ -513,6 +522,8 @@ if(err==="not-allowed"||err==="service-not-allowed"){
   msg="网络问题：语音识别需要联网，检查网络再试。";
 }else if(err==="no-speech"){
   msg="没听到声音：请靠近麦克风大声说。";
+}else if(err==="aborted"){
+  msg="识别被中断：请用键盘输入，或点输入框用键盘 🎤 听写（更稳定）。";
 }
 $("voiceHint").textContent=msg+"（"+err+"）";};
 rec.onend=()=>btn.classList.remove("listening");
