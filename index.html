@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>知行音乐</title>
+<meta name="theme-color" content="#14141a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="知行音乐">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- 顶部栏 -->
+  <header id="topbar">
+    <span id="logo">🎵 知行音乐</span>
+    <button id="carBtn" title="车载模式">🚗</button>
+  </header>
+
+  <!-- 推荐页 -->
+  <section id="view-home" class="view active">
+    <div class="block">
+      <h2>继续听</h2>
+      <div id="recentList" class="songlist"><p class="empty">还没有播放记录，听几首歌就记住了</p></div>
+    </div>
+    <div class="block">
+      <h2>猜你喜欢 <button id="refreshRec" class="mini-btn">换一批</button></h2>
+      <div id="recList" class="songlist"><p class="empty">多听几首，推荐越准</p></div>
+    </div>
+    <div class="block">
+      <h2>合集</h2>
+      <div id="folderList" class="folderlist"></div>
+    </div>
+  </section>
+
+  <!-- 搜索页 -->
+  <section id="view-search" class="view">
+    <div class="searchbar">
+      <input id="q" type="search" placeholder="搜歌名 / 歌手，如：晴天 周杰伦" autocomplete="off">
+      <button id="micBtn" title="语音搜歌">🎤</button>
+    </div>
+    <p id="voiceHint" class="hint" style="display:none"></p>
+    <div id="searchList" class="songlist"><p class="empty">在上面输入，或按 🎤 说句话</p></div>
+  </section>
+
+  <!-- 设置页 -->
+  <section id="view-settings" class="view">
+    <div class="block">
+      <h2>NAS 连接</h2>
+      <label>NAS 音乐地址
+        <input id="cfgDav" type="url" placeholder="https://nas.yjm.ccwu.cc/dav">
+      </label>
+      <label>账号
+        <input id="cfgUser" type="text" placeholder="ai" autocomplete="username">
+      </label>
+      <label>密码
+        <input id="cfgPass" type="password" placeholder="NAS 密码" autocomplete="current-password">
+      </label>
+      <div class="row">
+        <button id="saveCfg" class="btn">保存</button>
+        <button id="testConn" class="btn ghost">测试连接</button>
+      </div>
+      <p id="connStatus" class="hint"></p>
+      <p class="hint">密码只保存在本机浏览器里，不会上传到任何地方。</p>
+    </div>
+    <div class="block">
+      <h2>数据</h2>
+      <div class="row">
+        <button id="clearHist" class="btn ghost danger">清除播放记录</button>
+      </div>
+      <p class="hint">曲库共 <span id="libCount">-</span> 首 · <span id="appVer"></span></p>
+    </div>
+  </section>
+
+  <!-- 迷你播放器 -->
+  <div id="miniPlayer" style="display:none">
+    <div id="miniInfo"><b id="miniTitle">-</b><span id="miniArtist"></span></div>
+    <button id="miniToggle">⏸</button>
+    <button id="miniNext">⏭</button>
+  </div>
+
+  <!-- 全屏播放器 -->
+  <div id="fullPlayer" style="display:none">
+    <button id="closePlayer">﹀</button>
+    <div id="fpCover">🎵</div>
+    <div id="fpTitle">-</div>
+    <div id="fpArtist">-</div>
+    <div id="fpFolder">-</div>
+    <input id="seek" type="range" min="0" max="1000" value="0">
+    <div id="timeRow"><span id="tCur">0:00</span><span id="tDur">0:00</span></div>
+    <div id="fpControls">
+      <button id="fpPrev">⏮</button>
+      <button id="fpToggle" class="big">⏸</button>
+      <button id="fpNext">⏭</button>
+    </div>
+    <p id="playStatus" class="hint"></p>
+  </div>
+
+  <!-- 底部导航 -->
+  <nav id="tabbar">
+    <button data-view="view-home" class="active">🏠<span>推荐</span></button>
+    <button data-view="view-search">🔍<span>搜歌</span></button>
+    <button data-view="view-settings">⚙️<span>设置</span></button>
+  </nav>
+</div>
+
+<script src="catalog.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
