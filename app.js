@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v7.7 2026-10-07";
+const APP_VER = "v7.8 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -333,6 +333,14 @@ if(audio.paused) audio.play(); else audio.pause();
 }
 function next(auto=false){
 if(!queue.length) return;
+// 播到队尾：自动接上推荐歌单，不断流
+if(qi>=queue.length-1){
+  const recs=recommend(20).filter(s=>queue.indexOf(s)<0);
+  if(recs.length){
+    queue=queue.concat(recs);
+    if(auto) toast("已接上推荐歌单 ♪", "", 2500);
+  }
+}
 const n=(qi+1)%queue.length;
 playAt(n);
 }
