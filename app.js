@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.1 2026-10-07";
+const APP_VER = "v9.2 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -413,7 +413,6 @@ function preSwitch(){
   if(!audio.duration || audio.duration<10) return;
   const remain=audio.duration-audio.currentTime;
   if(remain>2.5 || remain<0.3) return;
-  // 队尾提前接推荐，保证有下一首
   if(qi>=queue.length-1){
     const recs=recommend(20).filter(s=>queue.indexOf(s)<0);
     if(recs.length) queue=queue.concat(recs);
@@ -422,9 +421,7 @@ function preSwitch(){
   const ns=queue[ni];
   if(!ns || ns===song) return;
   const blob=objCache[ns.p];
-  // blob 没下好也试下直链（SW 可能还活着）
   const useBlob=!!blob;
-  const oldQi=qi; // 保存，失败时回滚
   song._preSwitched=true;
   logPlay(song,true);
   qi=ni; ns._swapped=useBlob;
@@ -450,12 +447,7 @@ function preSwitch(){
         updateLikeBtn(ns);
       });
       prefetchNext(); ensureQueue();
-    }).catch(()=>{
-      // play() 被拒（如锁屏）：回滚 qi，走常规 next() 切歌
-      song._preSwitched=false;
-      qi=oldQi;
-      next(true);
-    });
+    }).catch(()=>{ song._preSwitched=false; });
   } else { song._preSwitched=false; }
 }
 audio.addEventListener("loadedmetadata",()=>{ $("tDur").textContent=fmtTime(audio.duration);});
@@ -466,13 +458,10 @@ if(!("mediaSession" in navigator)) return;
 try{
 navigator.mediaSession.metadata=new MediaMetadata({
 title:dispTitle(song), artist:dispArtist(song), album:song.f||"知行音乐"});
-const h={play:()=>audio.play(),pause:()=>audio.pause(),
-previoustrack:()=>prev(),nexttrack:()=>next(true)};
-for(const k in h){ try{navigator.mediaSession.setActionHandler(k,h[k]);}catch(e){}}
-// 明确清除快进/快退/拖动，只留上一首/下一首
-["seekbackward","seekforward","seekto"].forEach(k=>{
-  try{ navigator.mediaSession.setActionHandler(k,null); }catch(e){}
-});
+try{navigator.mediaSession.setActionHandler("play",()=>audio.play());}catch(e){}
+try{navigator.mediaSession.setActionHandler("pause",()=>audio.pause());}catch(e){}
+try{navigator.mediaSession.setActionHandler("previoustrack",()=>prev());}catch(e){}
+try{navigator.mediaSession.setActionHandler("nexttrack",()=>next(true));}catch(e){}
 }catch(e){}
 }
 
