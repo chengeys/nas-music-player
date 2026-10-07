@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v8.9 2026-10-07";
+const APP_VER = "v9.0 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -393,7 +393,12 @@ if(!queue.length) return;
 if(audio.currentTime>3){ audio.currentTime=0; return;}
 playAt((qi-1+queue.length)%queue.length);
 }
-audio.addEventListener("ended",()=>{ const s=queue[qi]; if(s) logPlay(s,true); next(true);});
+audio.addEventListener("ended",()=>{ 
+  const s=queue[qi]; if(s) logPlay(s,true); 
+  // 调试：显示切歌
+  toast("切到下一首…", "", 1500);
+  next(true);
+});
 audio.addEventListener("play",syncPlayBtns);
 audio.addEventListener("pause",syncPlayBtns);
 /* v8.5 方式：不上报位置，避免干扰 iOS 连播和按钮 */
@@ -454,15 +459,19 @@ function preSwitch(){
 }
 audio.addEventListener("loadedmetadata",()=>{ $("tDur").textContent=fmtTime(audio.duration);});
 
-/* 锁屏/耳机控制：v8.5 验证过的方式 */
+/* 锁屏/耳机控制 */
 function updateMediaSession(song){
 if(!("mediaSession" in navigator)) return;
 try{
 navigator.mediaSession.metadata=new MediaMetadata({
 title:dispTitle(song), artist:dispArtist(song), album:song.f||"知行音乐"});
 const h={play:()=>audio.play(),pause:()=>audio.pause(),
-previoustrack:prev,nexttrack:()=>next()};
+previoustrack:()=>prev(),nexttrack:()=>next(true)};
 for(const k in h){ try{navigator.mediaSession.setActionHandler(k,h[k]);}catch(e){}}
+// 明确清除快进/快退/拖动，只留上一首/下一首
+["seekbackward","seekforward","seekto"].forEach(k=>{
+  try{ navigator.mediaSession.setActionHandler(k,null); }catch(e){}
+});
 }catch(e){}
 }
 
