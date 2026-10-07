@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v7.5 2026-10-07";
+const APP_VER = "v7.6 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -239,11 +239,29 @@ throw e;
 throw lastErr||{code:0,msg:"重试3次仍失败"};
 }
 
-/* 流式播放：<audio> 直链 + SW 注入认证，点歌手势内同步 play() */
+/* 双保险播放：先流式秒播，后台下载完整文件后无缝切换（保锁屏） */
 let fbRetry=false;
+function trySwapToBlob(song){
+  if(!song || queue[qi]!==song || song._swapped) return;
+  const ou=objCache[song.p];
+  if(!ou) return;
+  if(document.visibilityState!=="visible") return;
+  if(audio.paused || audio.readyState<2) return;
+  try{
+    song._swapped=true;
+    const t=audio.currentTime;
+    audio.src=ou;
+    audio.currentTime=t;
+    audio.play().catch(()=>{ song._swapped=false; });
+  }catch(e){ song._swapped=false; }
+}
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible") trySwapToBlob(queue[qi]);
+});
 function playAt(i, autoplay=true){
 if(i<0||i>=queue.length) return;
 qi=i; const song=queue[qi]; fbRetry=false;
+song._swapped=false;
 audio.src=songUrl(song); // 直链，SW 会加上认证头
 loading=true; setPlayStatus("正在加载…");
 toast("正在加载《"+dispTitle(song)+"》…");
@@ -258,6 +276,8 @@ getSongMeta(song).then(m=>{
   if(m.coverUrl){ $("fpCoverImg").src=m.coverUrl; $("fpCoverImg").style.display="block"; $("fpCoverPh").style.display="none";
     $("miniCover").src=m.coverUrl; $("miniCover").classList.remove("hide"); }
 });
+// 后台下载完整文件，好了就无缝切到本地（锁屏也能播）
+blobUrl(song).then(()=>trySwapToBlob(song)).catch(()=>{});
 if(autoplay){
   const pr=audio.play();
   if(pr && pr.then){
