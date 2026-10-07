@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.0 2026-10-07";
+const APP_VER = "v9.1 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -393,12 +393,7 @@ if(!queue.length) return;
 if(audio.currentTime>3){ audio.currentTime=0; return;}
 playAt((qi-1+queue.length)%queue.length);
 }
-audio.addEventListener("ended",()=>{ 
-  const s=queue[qi]; if(s) logPlay(s,true); 
-  // 调试：显示切歌
-  toast("切到下一首…", "", 1500);
-  next(true);
-});
+audio.addEventListener("ended",()=>{ const s=queue[qi]; if(s) logPlay(s,true); next(true);});
 audio.addEventListener("play",syncPlayBtns);
 audio.addEventListener("pause",syncPlayBtns);
 /* v8.5 方式：不上报位置，避免干扰 iOS 连播和按钮 */
@@ -429,6 +424,7 @@ function preSwitch(){
   const blob=objCache[ns.p];
   // blob 没下好也试下直链（SW 可能还活着）
   const useBlob=!!blob;
+  const oldQi=qi; // 保存，失败时回滚
   song._preSwitched=true;
   logPlay(song,true);
   qi=ni; ns._swapped=useBlob;
@@ -454,7 +450,12 @@ function preSwitch(){
         updateLikeBtn(ns);
       });
       prefetchNext(); ensureQueue();
-    }).catch(()=>{ song._preSwitched=false; });
+    }).catch(()=>{
+      // play() 被拒（如锁屏）：回滚 qi，走常规 next() 切歌
+      song._preSwitched=false;
+      qi=oldQi;
+      next(true);
+    });
   } else { song._preSwitched=false; }
 }
 audio.addEventListener("loadedmetadata",()=>{ $("tDur").textContent=fmtTime(audio.duration);});
