@@ -87,11 +87,16 @@
 
   <!-- 全屏播放器 -->
   <div id="fullPlayer" style="display:none">
-    <button id="closePlayer">﹀</button>
-    <div id="fpCover">🎵</div>
+    <div class="fp-head">
+      <button id="closePlayer">﹀</button>
+      <button id="fpTab">详情</button>
+    </div>
+    <img id="fpCoverImg" alt="封面" style="display:none">
+    <div id="fpCoverPh">🎵</div>
     <div id="fpTitle">-</div>
     <div id="fpArtist">-</div>
-    <div id="fpFolder">-</div>
+    <div id="fpLyrics"></div>
+    <div id="fpDetail" style="display:none"></div>
     <input id="seek" type="range" min="0" max="1000" value="0">
     <div id="timeRow"><span id="tCur">0:00</span><span id="tDur">0:00</span></div>
     <div id="fpControls">
