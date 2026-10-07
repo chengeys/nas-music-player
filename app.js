@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v7.2 2026-10-07";
+const APP_VER = "v7.3 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -446,9 +446,9 @@ Object.values(folders).sort((a,b)=>b.c-a.c).forEach(f=>{
 const b=document.createElement("button"); b.className="folder";
 b.innerHTML=`<b>${f.c}</b><span></span>`;
 b.querySelector("span").textContent=f.n;
-b.onclick=()=>{ const ss=CATALOG.filter(s=>s.f===f.n); queue=ss.slice(); playAt(0);
+b.onclick=()=>{ const ss=CATALOG.filter(s=>s.f===f.n);
 $("q").value=""; showView("view-search"); renderSongs($("searchList"),ss,true);
-window.scrollTo(0,0);};
+window.scrollTo(0,0); toast("已载入《"+f.n+"》"+ss.length+"首，点一首开始播", "", 2500);};
 fl.appendChild(b);
 });
 $("libCount").textContent=CATALOG.length;
