@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v7.4 2026-10-07";
+const APP_VER = "v7.5 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -182,6 +182,15 @@ function escapeHtml(x){ return (x||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"
 function songKey(s){ return s.p;}
 function dispTitle(s){ return s.t || s.p.split("/").pop().replace(/\.[^.]+$/,"");}
 function dispArtist(s){ return s.a || "未知歌手";}
+
+let recExpanded=false, recCache=[];
+function renderRec(){
+  if(!recCache.length) recCache=recommend(20);
+  renderSongs($("recList"), recExpanded?recCache:recCache.slice(0,5), false);
+  const mb=$("recMore");
+  mb.style.display=recCache.length>5?"block":"none";
+  mb.textContent=recExpanded?"收起 ▴":"展开更多 ▾（共"+recCache.length+"首）";
+}
 
 /* ---------- 播放历史 ---------- */
 const HIST_KEY="zmusic.hist.v1";
@@ -440,7 +449,7 @@ return i;
 }
 function renderHome(){
 renderSongs($("recentList"), recentPlayed(10), false);
-renderSongs($("recList"), recommend(20), false);
+recCache=[]; recExpanded=false; renderRec();
 // 合集
 const folders={};
 for(const s of CATALOG){ folders[s.f]=folders[s.f]||{n:s.f,c:0}; folders[s.f].c++;}
@@ -500,7 +509,8 @@ $("q").addEventListener("input",()=>{ clearTimeout(deb);
 deb=setTimeout(()=>doSearch(false),300);});
 $("q").addEventListener("keydown",e=>{ if(e.key==="Enter") doSearch(false);});
 $("micBtn").onclick=voiceSearch;
-$("refreshRec").onclick=()=>renderSongs($("recList"),recommend(20),false);
+$("refreshRec").onclick=()=>{ recCache=[]; recExpanded=false; renderRec(); };
+$("recMore").onclick=()=>{ recExpanded=!recExpanded; renderRec(); };
 $("carBtn").onclick=()=>{ document.body.classList.toggle("car");
 $("carBtn").style.background=document.body.classList.contains("car")?"var(--acc)":"";};
 // 播放器
