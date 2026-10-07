@@ -322,7 +322,7 @@ $("appVer").textContent=APP_VER;
 
 /* ---------- 启动 ---------- */
 document.addEventListener("DOMContentLoaded",()=>{
-if(!("CATALOG" in window)||!CATALOG.length){ alert("曲库加载失败"); return;}
+if(typeof CATALOG==="undefined"||!CATALOG.length){ alert("曲库加载失败"); return;}
 bind(); renderHome();
 if("serviceWorker" in navigator){ navigator.serviceWorker.register("sw.js").catch(()=>{});}
 });
