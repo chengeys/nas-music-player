@@ -85,7 +85,6 @@ label input{display:block;width:100%;margin-top:6px;background:var(--bg2);
 #miniPlayer button{background:none;border:none;color:var(--fg);font-size:22px;padding:6px;}
 
 /* 迷你播放条进度 */
-#miniPlayer{position:relative;}
 #miniProg{position:absolute;top:0;left:0;right:0;height:16px;z-index:5;}
 #miniProgFill{height:3px;background:var(--acc);width:0%;border-radius:2px;}
 
