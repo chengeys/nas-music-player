@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v8.3 2026-10-07";
+const APP_VER = "v8.4 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -417,12 +417,13 @@ function preSwitch(){
   const ns=queue[ni];
   if(!ns || ns===song) return;
   const blob=objCache[ns.p];
-  if(!blob) return;
+  // blob 没下好也试下直链（SW 可能还活着）
+  const useBlob=!!blob;
   song._preSwitched=true;
   logPlay(song,true);
-  qi=ni; ns._swapped=true;
+  qi=ni; ns._swapped=useBlob;
   audioPlaying=false;
-  audio.src=blob;
+  audio.src=useBlob?blob:songUrl(ns);
   const pr=audio.play();
   if(pr&&pr.then){
     pr.then(()=>{
@@ -501,8 +502,19 @@ const cleaned=txt.replace(/^(播放|来一首|放一首|唱一首|点一首)/,""
 $("q").value=cleaned||txt;
 doSearch(true);
 };
-rec.onerror=()=>{ btn.classList.remove("listening");
-$("voiceHint").textContent="没听清，再试一次，或用键盘输入。";};
+rec.onerror=e=>{ btn.classList.remove("listening");
+const err=e.error||"unknown";
+let msg="没听清，再试一次，或用键盘输入。";
+if(err==="not-allowed"||err==="service-not-allowed"){
+  msg="麦克风权限被拒：去 iPhone 设置 → Safari（或知行音乐）→ 允许麦克风，再试。";
+}else if(err==="audio-capture"){
+  msg="没找到麦克风：检查是否被其他 App 占用。";
+}else if(err==="network"){
+  msg="网络问题：语音识别需要联网，检查网络再试。";
+}else if(err==="no-speech"){
+  msg="没听到声音：请靠近麦克风大声说。";
+}
+$("voiceHint").textContent=msg+"（"+err+"）";};
 rec.onend=()=>btn.classList.remove("listening");
 try{ rec.start();}catch(e){ btn.classList.remove("listening");}
 }
