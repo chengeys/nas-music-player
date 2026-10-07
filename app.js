@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v7.3 2026-10-07";
+const APP_VER = "v7.4 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -240,12 +240,14 @@ loading=true; setPlayStatus("正在加载…");
 toast("正在加载《"+dispTitle(song)+"》…");
 curLyrics=[]; renderLyrics();
 $("fpCoverImg").style.display="none"; $("fpCoverPh").style.display="block";
+$("miniCover").classList.add("hide");
 renderPlayer(); updateMediaSession(song);
 logPlay(song,false);
 getSongMeta(song).then(m=>{
   if(queue[qi]!==song) return;
   curLyrics=m.lyrics||[]; renderLyrics();
-  if(m.coverUrl){ $("fpCoverImg").src=m.coverUrl; $("fpCoverImg").style.display="block"; $("fpCoverPh").style.display="none"; }
+  if(m.coverUrl){ $("fpCoverImg").src=m.coverUrl; $("fpCoverImg").style.display="block"; $("fpCoverPh").style.display="none";
+    $("miniCover").src=m.coverUrl; $("miniCover").classList.remove("hide"); }
 });
 if(autoplay){
   const pr=audio.play();
@@ -303,7 +305,8 @@ audio.addEventListener("pause",syncPlayBtns);
 audio.addEventListener("timeupdate",()=>{
 if(audio.duration){ $("seek").value=Math.floor(audio.currentTime/audio.duration*1000);
 $("tCur").textContent=fmtTime(audio.currentTime);
-$("miniProgFill").style.width=(audio.currentTime/audio.duration*100)+"%";}
+const pct=(audio.currentTime/audio.duration*100);
+$("miniProgFill").style.width=pct+"%"; $("miniProgKnob").style.left=pct+"%";}
 syncLyrics();
 });
 audio.addEventListener("loadedmetadata",()=>{ $("tDur").textContent=fmtTime(audio.duration);});
@@ -503,12 +506,24 @@ $("carBtn").style.background=document.body.classList.contains("car")?"var(--acc)
 // 播放器
 $("miniToggle").onclick=e=>{e.stopPropagation();togglePlay();};
 $("miniNext").onclick=e=>{e.stopPropagation();next();};
+$("miniPrev").onclick=e=>{e.stopPropagation();prev();};
 $("miniPlayer").onclick=()=>{ $("fullPlayer").style.display="flex";
 $("fpDetail").style.display="none"; $("fpLyrics").style.display="block"; $("fpTab").textContent="详情";};
-$("miniProg").onclick=e=>{ e.stopPropagation();
-if(audio.duration){ const r=$("miniProg").getBoundingClientRect();
-const ratio=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width));
-audio.currentTime=ratio*audio.duration; }};
+/* 迷你进度条：点按+拖动跳转 */
+let scrubbing=false;
+function scrubTo(clientX){
+  const r=$("miniProg").getBoundingClientRect();
+  const ratio=Math.min(1,Math.max(0,(clientX-r.left)/r.width));
+  if(audio.duration) audio.currentTime=ratio*audio.duration;
+}
+$("miniProg").addEventListener("pointerdown",e=>{
+  scrubbing=true;
+  try{ $("miniProg").setPointerCapture(e.pointerId); }catch(_){}
+  scrubTo(e.clientX); e.stopPropagation(); e.preventDefault();
+});
+$("miniProg").addEventListener("pointermove",e=>{ if(scrubbing) scrubTo(e.clientX); });
+$("miniProg").addEventListener("pointerup",()=>{ scrubbing=false; });
+$("miniProg").addEventListener("pointercancel",()=>{ scrubbing=false; });
 $("closePlayer").onclick=()=>{ $("fullPlayer").style.display="none";};
 $("fpToggle").onclick=togglePlay; $("fpNext").onclick=()=>next(); $("fpPrev").onclick=prev;
 $("seek").addEventListener("input",()=>{ if(audio.duration) audio.currentTime=$("seek").value/1000*audio.duration;});
