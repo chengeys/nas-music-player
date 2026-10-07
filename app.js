@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v8.7 2026-10-07";
+const APP_VER = "v8.8 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -299,7 +299,6 @@ song._swapped=false; song._preSwitched=false;
 // 有预取好的本地文件就直接用（锁屏连播可靠），否则走流式秒播
 const cached=objCache[song.p];
 audioPlaying=false;
-posStateBlocked=true; // 切歌中，暂停锁屏位置上报
 if(cached){ audio.src=cached; song._swapped=true; }
 else { audio.src=songUrl(song); }
 // play() 越早调越好（锁屏自动连播就靠这一手）
@@ -327,9 +326,9 @@ getSongMeta(song).then(m=>{
 // 后台下载完整文件，好了就无缝切到本地（锁屏也能播）
 blobUrl(song).then(()=>trySwapToBlob(song)).catch(()=>{});
 if(playPromise && playPromise.then){
-  playPromise.then(()=>{ loading=false; setPlayStatus(""); hideToast(); posStateBlocked=false; prefetchNext(); ensureQueue(); })
-    .catch(e=>{ posStateBlocked=false; playFallback(song,e); });
-}else if(autoplay){ loading=false; hideToast(); posStateBlocked=false; prefetchNext(); ensureQueue(); }
+  playPromise.then(()=>{ loading=false; setPlayStatus(""); hideToast(); prefetchNext(); ensureQueue(); })
+    .catch(e=>playFallback(song,e));
+}else if(autoplay){ loading=false; hideToast(); prefetchNext(); ensureQueue(); }
 else { loading=false; hideToast(); }
 }
 // 直链失败（如 SW 还没拿到凭据）→ 回退到 fetch+blob
@@ -397,19 +396,9 @@ playAt((qi-1+queue.length)%queue.length);
 audio.addEventListener("ended",()=>{ const s=queue[qi]; if(s) logPlay(s,true); next(true);});
 audio.addEventListener("play",syncPlayBtns);
 audio.addEventListener("pause",syncPlayBtns);
-/* 锁屏进度条位置上报：只在稳定播放时上报，避免过渡期错误值干扰 iOS */
+/* v8.5 方式：不上报位置，避免干扰 iOS 连播和按钮 */
+function setPositionState(){}
 let lastPosState=0;
-let posStateBlocked=false; // 切歌过渡期暂停上报
-function setPositionState(){
-  if(!hasMS()||posStateBlocked) return;
-  try{
-    const d=audio.duration, p=audio.currentTime;
-    if(!d||!isFinite(d)||d<=0) return;
-    if(p==null||!isFinite(p)||p<0) return;
-    if(p>=d-0.5) return; // 接近结尾不上报，避免 iOS 认为已结束
-    navigator.mediaSession.setPositionState({duration:d, playbackRate:audio.playbackRate||1, position:p});
-  }catch(e){}
-}
 audio.addEventListener("timeupdate",()=>{
 if(audio.duration){ $("seek").value=Math.floor(audio.currentTime/audio.duration*1000);
 $("tCur").textContent=fmtTime(audio.currentTime);
@@ -417,8 +406,6 @@ const pct=(audio.currentTime/audio.duration*100);
 $("miniProgFill").style.width=pct+"%"; $("miniProgKnob").style.left=pct+"%";}
 syncLyrics();
 preSwitch();
-const now=Date.now();
-if(now-lastPosState>1000){ lastPosState=now; setPositionState(); }
 });
 /* 提前切歌：结束前2秒、还在出声时切下一首，iOS 当连续播放放行 */
 function preSwitch(){
@@ -441,12 +428,10 @@ function preSwitch(){
   logPlay(song,true);
   qi=ni; ns._swapped=useBlob;
   audioPlaying=false;
-  posStateBlocked=true; // 切歌中，暂停锁屏位置上报
   audio.src=useBlob?blob:songUrl(ns);
   const pr=audio.play();
   if(pr&&pr.then){
     pr.then(()=>{
-      posStateBlocked=false;
       loading=false; setPlayStatus(""); hideToast();
       curLyrics=[]; renderLyrics();
       $("fpCoverImg").style.display="none"; $("fpCoverPh").style.display="block";
@@ -464,21 +449,21 @@ function preSwitch(){
         updateLikeBtn(ns);
       });
       prefetchNext(); ensureQueue();
-    }).catch(()=>{ song._preSwitched=false; posStateBlocked=false; });
-  } else { song._preSwitched=false; posStateBlocked=false; }
+    }).catch(()=>{ song._preSwitched=false; });
+  } else { song._preSwitched=false; }
 }
 audio.addEventListener("loadedmetadata",()=>{ $("tDur").textContent=fmtTime(audio.duration);});
 
-/* ---------- 锁屏/耳机控制 ---------- */
+/* 锁屏/耳机控制：v8.5 验证过的方式，不上报位置、不加seek，只保留前后首按钮 */
 function updateMediaSession(song){
 if(!("mediaSession" in navigator)) return;
 try{
 navigator.mediaSession.metadata=new MediaMetadata({
 title:dispTitle(song), artist:dispArtist(song), album:song.f||"知行音乐"});
 const h={play:()=>audio.play(),pause:()=>audio.pause(),
-previoustrack:prev,nexttrack:()=>next(),
-seekto:d=>{ if(d.seekTime!=null&&isFinite(d.seekTime)){ try{audio.currentTime=d.seekTime;}catch(e){} } }};
+previoustrack:prev,nexttrack:()=>next()};
 for(const k in h){ try{navigator.mediaSession.setActionHandler(k,h[k]);}catch(e){}}
+try{ navigator.mediaSession.setActionHandler("seekto", null); }catch(e){}
 }catch(e){}
 }
 
