@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.2 2026-10-07";
+const APP_VER = "v9.3 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -220,6 +220,8 @@ const audio = new Audio();
 audio.preload="auto";
 audio.autoplay=true; // 换源后自动播，iOS 当连续播放处理
 audio.preload="auto";
+/* iOS 16.4+：声明播放类音频会话，锁屏/静音开关下保持后台播放 */
+try{ if("audioSession" in navigator && navigator.audioSession) navigator.audioSession.type="playback"; }catch(e){}
 let queue=[], qi=-1, objCache={}, blobCache={}, loading=false;
 
 async function blobUrl(song){
@@ -355,9 +357,33 @@ async function playFallback(song, origErr){
     }
     else if(e && e.name==="NotAllowedError"){ msg="iOS 阻止了播放：请再点一次这首歌"; }
     else msg="播放失败："+((e&&e.msg)||e);
+    /* 诊断用：控制台记下系统拒绝的原因名（NotAllowedError=系统策略拦截） */
+    try{ console.warn("[连播诊断] play 失败:", (e&&e.name)||"?", (e&&e.message)||e); }catch(_){}
     setPlayStatus(msg); toast(msg,"err",8000);
     if(e && e.code===401) alert(e.msg);
+    /* 锁屏时被系统拒绝：锁屏显示真实暂停状态，解锁/点按后自动重试 */
+    try{ if("mediaSession" in navigator) navigator.mediaSession.playbackState="paused"; }catch(_){}
+    scheduleResume(song);
   }
+}
+/* 锁屏时 play() 被系统拒绝后的自动恢复：
+   一旦页面可见（解锁/切回）或用户点按一次，就重试播放 */
+let resumeArmed=false;
+function scheduleResume(song){
+  if(resumeArmed) return;
+  resumeArmed=true;
+  const cleanup=()=>{
+    resumeArmed=false;
+    document.removeEventListener("visibilitychange",onVis);
+    window.removeEventListener("pointerdown",attempt);
+  };
+  const attempt=()=>{
+    if(queue[qi]!==song){ cleanup(); return; }
+    audio.play().then(()=>cleanup()).catch(()=>{});
+  };
+  const onVis=()=>{ if(document.visibilityState==="visible") attempt(); };
+  document.addEventListener("visibilitychange",onVis);
+  window.addEventListener("pointerdown",attempt);
 }
 function togglePlay(){
 if(!audio.src && queue.length) return playAt(0);
@@ -447,23 +473,40 @@ function preSwitch(){
         updateLikeBtn(ns);
       });
       prefetchNext(); ensureQueue();
-    }).catch(()=>{ song._preSwitched=false; });
+    }).catch(()=>{ song._preSwitched=false; updateMediaSession(ns); scheduleResume(ns); });
   } else { song._preSwitched=false; }
 }
 audio.addEventListener("loadedmetadata",()=>{ $("tDur").textContent=fmtTime(audio.duration);});
 
 /* 锁屏/耳机控制 */
+const IS_IOS=/iP(hone|ad|od)/.test(navigator.userAgent);
 function updateMediaSession(song){
 if(!("mediaSession" in navigator)) return;
 try{
+/* iOS 在播放真正开始时会清空之前注册的 metadata+handlers，
+   所以每次都 new 一个并重设（切歌时、playing 事件里都会调） */
 navigator.mediaSession.metadata=new MediaMetadata({
 title:dispTitle(song), artist:dispArtist(song), album:song.f||"知行音乐"});
-try{navigator.mediaSession.setActionHandler("play",()=>audio.play());}catch(e){}
-try{navigator.mediaSession.setActionHandler("pause",()=>audio.pause());}catch(e){}
-try{navigator.mediaSession.setActionHandler("previoustrack",()=>prev());}catch(e){}
-try{navigator.mediaSession.setActionHandler("nexttrack",()=>next(true));}catch(e){}
+const ms=navigator.mediaSession;
+const set=(a,fn)=>{ try{ ms.setActionHandler(a,fn); }catch(e){} };
+set("play",()=>{ audio.play().catch(()=>{}); });
+set("pause",()=>{ audio.pause(); });
+set("previoustrack",()=>prev());
+set("nexttrack",()=>next(true));
+if(IS_IOS){
+/* iOS 锁屏只有两个传输槽位，默认会被 ±10 秒快进占掉：
+   显式置空才能显示上一首/下一首（光不注册不够） */
+set("seekbackward",null); set("seekforward",null); set("seekto",null);
+}
+/* 锁屏显示真实状态，避免"显示在播实际已停" */
+ms.playbackState=audio.paused?"paused":"playing";
 }catch(e){}
 }
+/* 在真正播起来之后重建一次 media session（iOS 会清掉播放开始前注册的） */
+audio.addEventListener("playing",()=>{ const s=queue[qi]; if(s) updateMediaSession(s); });
+audio.addEventListener("pause",()=>{
+try{ if("mediaSession" in navigator) navigator.mediaSession.playbackState="paused"; }catch(e){}
+});
 
 /* ---------- 搜索 ---------- */
 function searchSongs(q){
@@ -788,6 +831,8 @@ $("appVer").textContent=APP_VER;
 document.addEventListener("DOMContentLoaded",()=>{
 if(typeof CATALOG==="undefined"||!CATALOG.length){ alert("曲库加载失败"); return;}
 bind(); renderHome();
+/* 清掉 WebKit 缓存的陈旧 media session 状态（旧版本残留会导致锁屏按钮一直灰） */
+try{ if("mediaSession" in navigator && navigator.mediaSession.setPositionState) navigator.mediaSession.setPositionState(); }catch(e){}
 if("serviceWorker" in navigator){
   navigator.serviceWorker.register("sw.js").catch(()=>{});
   // SW 就绪后把认证头推过去
