@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v8.8 2026-10-07";
+const APP_VER = "v8.9 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -454,7 +454,7 @@ function preSwitch(){
 }
 audio.addEventListener("loadedmetadata",()=>{ $("tDur").textContent=fmtTime(audio.duration);});
 
-/* 锁屏/耳机控制：v8.5 验证过的方式，不上报位置、不加seek，只保留前后首按钮 */
+/* 锁屏/耳机控制：v8.5 验证过的方式 */
 function updateMediaSession(song){
 if(!("mediaSession" in navigator)) return;
 try{
@@ -463,7 +463,6 @@ title:dispTitle(song), artist:dispArtist(song), album:song.f||"知行音乐"});
 const h={play:()=>audio.play(),pause:()=>audio.pause(),
 previoustrack:prev,nexttrack:()=>next()};
 for(const k in h){ try{navigator.mediaSession.setActionHandler(k,h[k]);}catch(e){}}
-try{ navigator.mediaSession.setActionHandler("seekto", null); }catch(e){}
 }catch(e){}
 }
 
