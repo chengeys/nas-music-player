@@ -115,20 +115,32 @@ function parseLRC(text){
   return lines;
 }
 let curLyrics=[], curLrcIdx=-1, metaCache={};
+/* 歌词/封面：单独取文件头 2MB 解析，不阻塞播放 */
 async function getSongMeta(song){
   if(metaCache[song.p]) return metaCache[song.p];
   const m={lyrics:null,coverUrl:null};
   try{
-    const blob=blobCache[song.p];
-    if(blob){
-      const head=await blob.slice(0,2*1024*1024).arrayBuffer();
-      const id3=parseID3(head);
+    const r=await fetch(songUrl(song),{
+      headers:{Authorization:authHeader(), Range:"bytes=0-2097151"}
+    });
+    if(r.ok){
+      const id3=parseID3(await r.arrayBuffer());
       m.coverUrl=id3.coverUrl;
       if(id3.lyrics) m.lyrics=parseLRC(id3.lyrics);
     }
   }catch(e){}
   metaCache[song.p]=m;
   return m;
+}
+/* 把认证头推给 SW，用于 <audio> 直链 */
+function pushAuthToSW(){
+  const msg={type:"SET_AUTH", auth:authHeader()};
+  try{
+    if(navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage(msg);
+    if("serviceWorker" in navigator){
+      navigator.serviceWorker.ready.then(reg=>{ if(reg.active) reg.active.postMessage(msg); }).catch(()=>{});
+    }
+  }catch(e){}
 }
 function renderLyrics(){
   const el=$("fpLyrics"); el.innerHTML=""; curLrcIdx=-1;
@@ -218,37 +230,58 @@ throw e;
 throw lastErr||{code:0,msg:"重试3次仍失败"};
 }
 
-async function playAt(i, autoplay=true){
+/* 流式播放：<audio> 直链 + SW 注入认证，点歌手势内同步 play() */
+let fbRetry=false;
+function playAt(i, autoplay=true){
 if(i<0||i>=queue.length) return;
-qi=i; const song=queue[qi];
+qi=i; const song=queue[qi]; fbRetry=false;
+audio.src=songUrl(song); // 直链，SW 会加上认证头
 loading=true; setPlayStatus("正在加载…");
 toast("正在加载《"+dispTitle(song)+"》…");
-try{
-audio.src=await blobUrl(song);
-if(autoplay) await audio.play();
-logPlay(song,false);
-renderPlayer(); updateMediaSession(song);
-setPlayStatus(""); hideToast();
-// 歌词+封面（不阻塞播放）
 curLyrics=[]; renderLyrics();
 $("fpCoverImg").style.display="none"; $("fpCoverPh").style.display="block";
+renderPlayer(); updateMediaSession(song);
+logPlay(song,false);
 getSongMeta(song).then(m=>{
   if(queue[qi]!==song) return;
   curLyrics=m.lyrics||[]; renderLyrics();
   if(m.coverUrl){ $("fpCoverImg").src=m.coverUrl; $("fpCoverImg").style.display="block"; $("fpCoverPh").style.display="none"; }
 });
-}catch(e){
-loading=false;
-let msg="";
-if(e && e.code===401){ msg=e.msg; }
-else if(e instanceof TypeError){
-msg="连不上 NAS：可能是反代没开，或没配 CORS。去设置页点“测试连接”。";
-} else msg="播放失败："+(e.msg||e);
-setPlayStatus(msg); toast(msg,"err",8000);
-if(e && e.code===401) alert(e.msg);
-return;
+if(autoplay){
+  const pr=audio.play();
+  if(pr && pr.then){
+    pr.then(()=>{ loading=false; setPlayStatus(""); hideToast(); })
+      .catch(e=>playFallback(song,e));
+  } else { loading=false; hideToast(); }
+}else{ loading=false; hideToast(); }
 }
-loading=false;
+// 直链失败（如 SW 还没拿到凭据）→ 回退到 fetch+blob
+audio.addEventListener("error",()=>{
+  const song=queue[qi];
+  if(song && !fbRetry && audio.readyState<2 && !audio.currentTime){
+    fbRetry=true; playFallback(song, new Error("audio error"));
+  }
+});
+async function playFallback(song, origErr){
+  if(queue[qi]!==song) return;
+  toast("换备用方式加载…");
+  try{
+    audio.src=await blobUrl(song);
+    await audio.play();
+    loading=false; setPlayStatus(""); hideToast();
+    renderPlayer();
+  }catch(e){
+    loading=false;
+    let msg="";
+    if(e && e.code===401){ msg=e.msg; }
+    else if(e instanceof TypeError){
+      msg="连不上 NAS：可能是反代没开，或没配 CORS。去设置页点“测试连接”。";
+    }
+    else if(e && e.name==="NotAllowedError"){ msg="iOS 阻止了播放：请再点一次这首歌"; }
+    else msg="播放失败："+((e&&e.msg)||e);
+    setPlayStatus(msg); toast(msg,"err",8000);
+    if(e && e.code===401) alert(e.msg);
+  }
 }
 function togglePlay(){
 if(!audio.src && queue.length) return playAt(0);
@@ -481,7 +514,8 @@ $("fpTab").onclick=()=>{
 // 设置
 $("saveCfg").onclick=()=>{ cfg.dav=$("cfgDav").value.trim()||cfg.dav;
 cfg.user=$("cfgUser").value.trim()||"ai"; cfg.pass=$("cfgPass").value;
-saveCfg(); $("connStatus").className="hint"; $("connStatus").textContent="已保存";};
+saveCfg(); pushAuthToSW();
+$("connStatus").className="hint"; $("connStatus").textContent="已保存";};
 $("testConn").onclick=testConn;
 $("clearHist").onclick=()=>{ if(confirm("清除本机所有播放记录？")){ hist={}; saveHist(); renderHome();}};
 $("cfgDav").value=cfg.dav; $("cfgUser").value=cfg.user; $("cfgPass").value=cfg.pass||"";
@@ -492,5 +526,10 @@ $("appVer").textContent=APP_VER;
 document.addEventListener("DOMContentLoaded",()=>{
 if(typeof CATALOG==="undefined"||!CATALOG.length){ alert("曲库加载失败"); return;}
 bind(); renderHome();
-if("serviceWorker" in navigator){ navigator.serviceWorker.register("sw.js").catch(()=>{});}
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("sw.js").catch(()=>{});
+  // SW 就绪后把认证头推过去
+  navigator.serviceWorker.ready.then(()=>pushAuthToSW()).catch(()=>{});
+  setTimeout(pushAuthToSW, 3000); // 兜底再推一次
+}
 });
