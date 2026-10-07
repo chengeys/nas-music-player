@@ -34,6 +34,13 @@ if(!isFinite(sec)||sec<0) sec=0;
 const m=Math.floor(sec/60), s=Math.floor(sec%60);
 return m+":"+String(s).padStart(2,"0");
 }
+let toastTimer=null;
+function toast(msg, cls="", ms=4000){
+const el=$("toast"); el.textContent=msg; el.className=cls; el.style.display="block";
+clearTimeout(toastTimer);
+if(ms>0) toastTimer=setTimeout(()=>{ el.style.display="none"; }, ms);
+}
+function hideToast(){ $("toast").style.display="none"; clearTimeout(toastTimer); }
 function songKey(s){ return s.p;}
 function dispTitle(s){ return s.t || s.p.split("/").pop().replace(/\.[^.]+$/,"");}
 function dispArtist(s){ return s.a || "未知歌手";}
@@ -74,18 +81,22 @@ async function playAt(i, autoplay=true){
 if(i<0||i>=queue.length) return;
 qi=i; const song=queue[qi];
 loading=true; setPlayStatus("正在加载…");
+toast("正在加载《"+dispTitle(song)+"》…");
 try{
 audio.src=await blobUrl(song);
 if(autoplay) await audio.play();
 logPlay(song,false);
 renderPlayer(); updateMediaSession(song);
-setPlayStatus("");
+setPlayStatus(""); hideToast();
 }catch(e){
 loading=false;
-if(e && e.code===401){ setPlayStatus(e.msg); alert(e.msg);}
+let msg="";
+if(e && e.code===401){ msg=e.msg; }
 else if(e instanceof TypeError){
-setPlayStatus("连不上 NAS：可能是反代没开，或没配 CORS。去设置页点“测试连接”。");
-} else setPlayStatus("播放失败："+(e.msg||e));
+msg="连不上 NAS：可能是反代没开，或没配 CORS。去设置页点“测试连接”。";
+} else msg="播放失败："+(e.msg||e);
+setPlayStatus(msg); toast(msg,"err",8000);
+if(e && e.code===401) alert(e.msg);
 return;
 }
 loading=false;
