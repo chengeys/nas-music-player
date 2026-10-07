@@ -1,5 +1,5 @@
 /* 知行音乐 Service Worker v1 */
-const CACHE = "zmusic-v3";
+const CACHE = "zmusic-v4";
 const SHELL = ["./","./index.html","./style.css","./app.js","./catalog.js","./manifest.json","./icon.svg"];
 self.addEventListener("install", e=>{
   e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()));
