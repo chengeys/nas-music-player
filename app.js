@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v1.0 2026-10-07";
+const APP_VER = "v7.2 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -302,7 +302,8 @@ audio.addEventListener("play",syncPlayBtns);
 audio.addEventListener("pause",syncPlayBtns);
 audio.addEventListener("timeupdate",()=>{
 if(audio.duration){ $("seek").value=Math.floor(audio.currentTime/audio.duration*1000);
-$("tCur").textContent=fmtTime(audio.currentTime);}
+$("tCur").textContent=fmtTime(audio.currentTime);
+$("miniProgFill").style.width=(audio.currentTime/audio.duration*100)+"%";}
 syncLyrics();
 });
 audio.addEventListener("loadedmetadata",()=>{ $("tDur").textContent=fmtTime(audio.duration);});
@@ -504,6 +505,10 @@ $("miniToggle").onclick=e=>{e.stopPropagation();togglePlay();};
 $("miniNext").onclick=e=>{e.stopPropagation();next();};
 $("miniPlayer").onclick=()=>{ $("fullPlayer").style.display="flex";
 $("fpDetail").style.display="none"; $("fpLyrics").style.display="block"; $("fpTab").textContent="详情";};
+$("miniProg").onclick=e=>{ e.stopPropagation();
+if(audio.duration){ const r=$("miniProg").getBoundingClientRect();
+const ratio=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width));
+audio.currentTime=ratio*audio.duration; }};
 $("closePlayer").onclick=()=>{ $("fullPlayer").style.display="none";};
 $("fpToggle").onclick=togglePlay; $("fpNext").onclick=()=>next(); $("fpPrev").onclick=prev;
 $("seek").addEventListener("input",()=>{ if(audio.duration) audio.currentTime=$("seek").value/1000*audio.duration;});
