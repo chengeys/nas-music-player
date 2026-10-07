@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v7.9 2026-10-07";
+const APP_VER = "v8.0 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -192,6 +192,18 @@ function renderRec(){
   mb.textContent=recExpanded?"收起 ▴":"展开更多 ▾（共"+recCache.length+"首）";
 }
 
+/* 我喜欢 */
+const FAV_KEY="zmusic.fav.v1";
+let fav={};
+try{ fav=JSON.parse(localStorage.getItem(FAV_KEY)||"{}"); }catch(e){ fav={}; }
+function saveFav(){ localStorage.setItem(FAV_KEY, JSON.stringify(fav)); }
+function updateLikeBtn(song){
+  const liked=!!fav[song.p];
+  $("fpLike").textContent=liked?"♥":"♡";
+  $("fpLike").classList.toggle("liked",liked);
+}
+let repeatOne=false;
+
 /* ---------- 播放历史 ---------- */
 const HIST_KEY="zmusic.hist.v1";
 let hist={};
@@ -297,8 +309,12 @@ logPlay(song,false);
 getSongMeta(song).then(m=>{
   if(queue[qi]!==song) return;
   curLyrics=m.lyrics||[]; renderLyrics();
-  if(m.coverUrl){ $("fpCoverImg").src=m.coverUrl; $("fpCoverImg").style.display="block"; $("fpCoverPh").style.display="none";
-    $("miniCover").src=m.coverUrl; $("miniCover").classList.remove("hide"); }
+  if(m.coverUrl){
+    $("fpCoverImg").src=m.coverUrl; $("fpCoverImg").style.display="block"; $("fpCoverPh").style.display="none";
+    $("miniCover").src=m.coverUrl; $("miniCover").classList.remove("hide");
+    $("fpBg").style.backgroundImage=`url("${m.coverUrl}")`;
+  } else { $("fpBg").style.backgroundImage="none"; }
+  updateLikeBtn(song);
 });
 // 后台下载完整文件，好了就无缝切到本地（锁屏也能播）
 blobUrl(song).then(()=>trySwapToBlob(song)).catch(()=>{});
@@ -344,6 +360,7 @@ if(audio.paused) audio.play(); else audio.pause();
 }
 function next(auto=false){
 if(!queue.length) return;
+if(repeatOne && auto){ playAt(qi); return; }
 // 播到队尾：自动接上推荐歌单，不断流
 if(qi>=queue.length-1){
   const recs=recommend(20).filter(s=>queue.indexOf(s)<0);
@@ -506,16 +523,32 @@ recCache=[]; recExpanded=false; renderRec();
 const folders={};
 for(const s of CATALOG){ folders[s.f]=folders[s.f]||{n:s.f,c:0}; folders[s.f].c++;}
 const fl=$("folderList"); fl.innerHTML="";
+/* QQ风渐变封面：按名字哈希取色 */
+const GRADS=[
+  "linear-gradient(135deg,#31c27c,#1a8f5c)","linear-gradient(135deg,#7c5cff,#4a2fd6)",
+  "linear-gradient(135deg,#ff7a59,#e5484d)","linear-gradient(135deg,#4aa8ff,#2b6fd6)",
+  "linear-gradient(135deg,#ffb84d,#f67c1f)","linear-gradient(135deg,#c86bff,#8b3fd6)",
+  "linear-gradient(135deg,#4ade80,#16a34a)","linear-gradient(135deg,#ff6b9d,#d63f7a)"];
+function gradFor(name){ let h=0; for(const ch of name) h=(h*31+ch.codePointAt(0))>>>0;
+  return GRADS[h%GRADS.length]; }
 Object.values(folders).sort((a,b)=>b.c-a.c).forEach(f=>{
-const b=document.createElement("button"); b.className="folder";
-b.innerHTML=`<b>${f.c}</b><span></span>`;
-b.querySelector("span").textContent=f.n;
+const b=document.createElement("button"); b.className="qq-card";
+b.innerHTML=`<div class="qq-card-bg" style="background:${gradFor(f.n)}"></div>
+  <div class="qq-play">▶</div>
+  <div class="qq-card-info"><b></b><span>${f.c} 首</span></div>`;
+b.querySelector("b").textContent=f.n;
+b.querySelector(".qq-play").onclick=e=>{ e.stopPropagation();
+  const ss=CATALOG.filter(s=>s.f===f.n); queue=ss.slice(); playAt(0); };
 b.onclick=()=>{ const ss=CATALOG.filter(s=>s.f===f.n);
 $("q").value=""; showView("view-search"); renderSongs($("searchList"),ss,true);
 window.scrollTo(0,0); toast("已载入《"+f.n+"》"+ss.length+"首，点一首开始播", "", 2500);};
 fl.appendChild(b);
 });
 $("libCount").textContent=CATALOG.length;
+const fc=Object.keys(folders).length;
+$("qqStats").textContent=`${CATALOG.length} 首歌曲 · ${fc} 个合集`;
+const hr=new Date().getHours();
+$("qqGreet").textContent=hr<6?"夜深了":hr<12?"上午好":hr<14?"中午好":hr<18?"下午好":"晚上好";
 }
 function renderPlayer(){
 const s=queue[qi]; if(!s) return;
@@ -563,6 +596,22 @@ $("q").addEventListener("keydown",e=>{ if(e.key==="Enter") doSearch(false);});
 $("micBtn").onclick=voiceSearch;
 $("refreshRec").onclick=()=>{ recCache=[]; recExpanded=false; renderRec(); };
 $("recMore").onclick=()=>{ recExpanded=!recExpanded; renderRec(); };
+/* 首页快捷入口 */
+document.querySelectorAll(".qq-quick button").forEach(b=>{
+  b.onclick=()=>{
+    const go=b.dataset.go;
+    if(go==="rec"){ document.getElementById("blockRec").scrollIntoView({behavior:"smooth"}); }
+    else if(go==="recent"){ document.getElementById("blockRecent").scrollIntoView({behavior:"smooth"}); }
+    else if(go==="folders"){ document.getElementById("blockFolders").scrollIntoView({behavior:"smooth"}); }
+    else if(go==="shuffle"){
+      if(!CATALOG.length) return;
+      queue=CATALOG.slice();
+      // 洗牌
+      for(let i=queue.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [queue[i],queue[j]]=[queue[j],queue[i]]; }
+      playAt(0); toast("随机播放全部歌曲 ♪","",2000);
+    }
+  };
+});
 $("carBtn").onclick=()=>{ document.body.classList.toggle("car");
 $("carBtn").style.background=document.body.classList.contains("car")?"var(--acc)":"";};
 // 播放器
@@ -594,6 +643,28 @@ $("fpTab").onclick=()=>{
   $("fpDetail").style.display=showDetail?"block":"none";
   $("fpLyrics").style.display=showDetail?"none":"block";
   $("fpTab").textContent=showDetail?"歌词":"详情";
+};
+/* 播放页 QQ风按钮 */
+$("fpLike").onclick=()=>{
+  const song=queue[qi]; if(!song) return;
+  if(fav[song.p]){ delete fav[song.p]; toast("已取消喜欢"); }
+  else { fav[song.p]=Date.now(); toast("已加入我喜欢 ❤"); }
+  saveFav(); updateLikeBtn(song);
+};
+$("fpDl").onclick=()=>$("fpTab").onclick();
+$("fpShare").onclick=()=>{
+  const song=queue[qi]; if(!song) return;
+  const txt=`${dispTitle(song)} - ${dispArtist(song)}`;
+  if(navigator.clipboard) navigator.clipboard.writeText(txt).catch(()=>{});
+  toast("已复制："+txt,"",2000);
+};
+$("fpMode").onclick=()=>{
+  repeatOne=!repeatOne;
+  $("fpMode").textContent=repeatOne?"🔂":"🔁";
+  toast(repeatOne?"单曲循环":"列表循环","",1500);
+};
+$("fpList").onclick=()=>{
+  toast(`播放列表共 ${queue.length} 首，当前第 ${qi+1} 首`,"",2500);
 };
 // 设置
 $("saveCfg").onclick=()=>{ cfg.dav=$("cfgDav").value.trim()||cfg.dav;
