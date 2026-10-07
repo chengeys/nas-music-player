@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v7.8 2026-10-07";
+const APP_VER = "v7.9 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -241,18 +241,28 @@ throw lastErr||{code:0,msg:"重试3次仍失败"};
 
 /* 双保险播放：先流式秒播，后台下载完整文件后无缝切换（保锁屏） */
 let fbRetry=false;
+/* 跟踪是否真正在播放（playing 事件），避免切源时撞车 */
+let audioPlaying=false;
+audio.addEventListener("playing",()=>{
+  audioPlaying=true;
+  trySwapToBlob(queue[qi]); // 播起来了，补一次切本地
+});
+audio.addEventListener("pause",()=>{ audioPlaying=false; });
+audio.addEventListener("waiting",()=>{ audioPlaying=false; });
 function trySwapToBlob(song){
   if(!song || queue[qi]!==song || song._swapped) return;
   const ou=objCache[song.p];
   if(!ou) return;
   if(document.visibilityState!=="visible") return;
-  if(audio.paused || audio.readyState<2) return;
+  if(!audioPlaying) return; // 必须真正在播，才换源
   try{
     song._swapped=true;
+    audioPlaying=false;
     const t=audio.currentTime;
     audio.src=ou;
     audio.currentTime=t;
-    audio.play().catch(()=>{ song._swapped=false; });
+    const pr=audio.play();
+    if(pr&&pr.then) pr.then(()=>{ audioPlaying=true; }).catch(()=>{ song._swapped=false; });
   }catch(e){ song._swapped=false; }
 }
 /* 预取下一首：音频+歌词封面，播完自动切时直接用本地，锁屏也能连播 */
@@ -274,6 +284,7 @@ qi=i; const song=queue[qi]; fbRetry=false;
 song._swapped=false;
 // 有预取好的本地文件就直接用（锁屏连播可靠），否则走流式秒播
 const cached=objCache[song.p];
+audioPlaying=false;
 if(cached){ audio.src=cached; song._swapped=true; }
 else { audio.src=songUrl(song); }
 loading=true; setPlayStatus("正在加载…");
