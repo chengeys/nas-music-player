@@ -1,5 +1,5 @@
 /* 知行音乐 Service Worker v1 */
-const CACHE = "zmusic-v1";
+const CACHE = "zmusic-v2";
 const SHELL = ["./","./index.html","./style.css","./app.js","./catalog.js","./manifest.json","./icon.svg"];
 self.addEventListener("install", e=>{
   e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()));
@@ -15,6 +15,7 @@ self.addEventListener("fetch", e=>{
   }
   e.respondWith(
     caches.match(e.request).then(hit=>hit||fetch(e.request).then(r=>{
+      if(!r.ok) return r;
       const cp=r.clone();
       caches.open(CACHE).then(c=>c.put(e.request,cp)).catch(()=>{});
       return r;
