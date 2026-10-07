@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v7.6 2026-10-07";
+const APP_VER = "v7.7 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -255,6 +255,16 @@ function trySwapToBlob(song){
     audio.play().catch(()=>{ song._swapped=false; });
   }catch(e){ song._swapped=false; }
 }
+/* 预取下一首：音频+歌词封面，播完自动切时直接用本地，锁屏也能连播 */
+function prefetchNext(){
+  if(!queue.length) return;
+  const n=queue[(qi+1)%queue.length];
+  if(n && n!==queue[qi] && !n._prefetching){
+    n._prefetching=true;
+    blobUrl(n).catch(()=>{}).finally(()=>{ n._prefetching=false; });
+    getSongMeta(n).catch(()=>{});
+  }
+}
 document.addEventListener("visibilitychange",()=>{
   if(document.visibilityState==="visible") trySwapToBlob(queue[qi]);
 });
@@ -262,7 +272,10 @@ function playAt(i, autoplay=true){
 if(i<0||i>=queue.length) return;
 qi=i; const song=queue[qi]; fbRetry=false;
 song._swapped=false;
-audio.src=songUrl(song); // 直链，SW 会加上认证头
+// 有预取好的本地文件就直接用（锁屏连播可靠），否则走流式秒播
+const cached=objCache[song.p];
+if(cached){ audio.src=cached; song._swapped=true; }
+else { audio.src=songUrl(song); }
 loading=true; setPlayStatus("正在加载…");
 toast("正在加载《"+dispTitle(song)+"》…");
 curLyrics=[]; renderLyrics();
@@ -281,9 +294,9 @@ blobUrl(song).then(()=>trySwapToBlob(song)).catch(()=>{});
 if(autoplay){
   const pr=audio.play();
   if(pr && pr.then){
-    pr.then(()=>{ loading=false; setPlayStatus(""); hideToast(); })
+    pr.then(()=>{ loading=false; setPlayStatus(""); hideToast(); prefetchNext(); })
       .catch(e=>playFallback(song,e));
-  } else { loading=false; hideToast(); }
+  } else { loading=false; hideToast(); prefetchNext(); }
 }else{ loading=false; hideToast(); }
 }
 // 直链失败（如 SW 还没拿到凭据）→ 回退到 fetch+blob
