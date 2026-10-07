@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v8.5 2026-10-07";
+const APP_VER = "v8.6 2026-10-07";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -396,6 +396,7 @@ playAt((qi-1+queue.length)%queue.length);
 audio.addEventListener("ended",()=>{ const s=queue[qi]; if(s) logPlay(s,true); next(true);});
 audio.addEventListener("play",syncPlayBtns);
 audio.addEventListener("pause",syncPlayBtns);
+let lastPosState=0;
 audio.addEventListener("timeupdate",()=>{
 if(audio.duration){ $("seek").value=Math.floor(audio.currentTime/audio.duration*1000);
 $("tCur").textContent=fmtTime(audio.currentTime);
@@ -403,6 +404,9 @@ const pct=(audio.currentTime/audio.duration*100);
 $("miniProgFill").style.width=pct+"%"; $("miniProgKnob").style.left=pct+"%";}
 syncLyrics();
 preSwitch();
+// 锁屏进度条需要定期上报位置（节流到1秒一次）
+const now=Date.now();
+if(now-lastPosState>1000){ lastPosState=now; setPositionState(); }
 });
 /* 提前切歌：结束前2秒、还在出声时切下一首，iOS 当连续播放放行 */
 function preSwitch(){
@@ -486,6 +490,14 @@ return res.slice(0,80).map(r=>r.s);
 
 /* ---------- 语音搜索 ---------- */
 function voiceSearch(){
+// iOS 网页语音识别不稳定（系统层问题），直接用 iOS 键盘听写更可靠
+const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+if(isIOS){
+  $("q").focus();
+  $("voiceHint").style.display="block";
+  $("voiceHint").textContent="点键盘上的 🎤 话筒开始听写，说完点搜索。";
+  return;
+}
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 if(!SR){
 $("voiceHint").style.display="block";
