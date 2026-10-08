@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.5 2026-10-08";
+const APP_VER = "v9.6 2026-10-08";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -815,20 +815,25 @@ $("miniProg").addEventListener("pointercancel",()=>{ scrubbing=false; });
 $("closePlayer").onclick=()=>{ $("fullPlayer").style.display="none";};
 $("fpToggle").onclick=togglePlay; $("fpNext").onclick=()=>next(); $("fpPrev").onclick=prev;
 $("seek").addEventListener("input",()=>{ if(audio.duration) audio.currentTime=$("seek").value/1000*audio.duration;});
-$("fpTab").onclick=()=>{
+/* 歌词大屏模式：像 QQ 音乐一样，点黑胶进整屏歌词，点"词"按钮切回 */
+function setLyricMode(on){
+  $("fullPlayer").classList.toggle("lyric-mode",on);
+  if(on){ $("fpDetail").style.display="none"; $("fpLyrics").style.display="block"; }
+}
+$("fpTab").onclick=()=>setLyricMode(!$("fullPlayer").classList.contains("lyric-mode"));
+$("vinylStage").onclick=()=>setLyricMode(true);
+/* ⓘ 按钮：歌曲详情与歌词互切 */
+$("fpDl").onclick=()=>{
   const showDetail=$("fpDetail").style.display==="none";
   $("fpDetail").style.display=showDetail?"block":"none";
   $("fpLyrics").style.display=showDetail?"none":"block";
-  $("fpTab").textContent=showDetail?"歌词":"详情";
 };
-/* 播放页 QQ风按钮 */
 $("fpLike").onclick=()=>{
   const song=queue[qi]; if(!song) return;
   if(fav[song.p]){ delete fav[song.p]; toast("已取消喜欢"); }
   else { fav[song.p]=Date.now(); toast("已加入我喜欢 ❤"); }
   saveFav(); updateLikeBtn(song);
 };
-$("fpDl").onclick=()=>$("fpTab").onclick();
 $("fpShare").onclick=()=>{
   const song=queue[qi]; if(!song) return;
   const txt=`${dispTitle(song)} - ${dispArtist(song)}`;

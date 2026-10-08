@@ -213,6 +213,12 @@ label input:focus{border-color:var(--acc);}
 #fpTab{font-size:15px!important;font-weight:700;border:1px solid var(--line)!important;
   border-radius:14px!important;padding:5px 14px!important;background:#fff;}
 
+/* 歌词大屏模式 */
+#fullPlayer.lyric-mode .vinyl-stage{display:none;}
+#fullPlayer.lyric-mode #fpLyrics{flex:1;min-height:0;}
+#fullPlayer.lyric-mode .lrc-line{font-size:17px;padding:10px 18px;}
+#fullPlayer.lyric-mode .lrc-line.active{font-size:21px;}
+
 /* 歌词 */
 #fpLyrics{flex:1;overflow-y:auto;margin:6px 0;min-height:90px;
   -webkit-overflow-scrolling:touch;text-align:center;
