@@ -186,15 +186,15 @@ label input:focus{border-color:var(--acc);}
 .vinyl-label.ph{display:flex;align-items:center;justify-content:center;font-size:44px;color:#fff;
   background:linear-gradient(135deg,#35c37f,#178a52);}
 /* 唱臂 */
-.tonearm{position:absolute;top:2px;right:9%;width:80px;height:130px;z-index:3;pointer-events:none;
+.tonearm{position:absolute;top:0;right:7%;width:96px;height:140px;z-index:3;pointer-events:none;
   transform-origin:78% 6%;transform:rotate(-26deg);transition:transform .9s ease;}
 #vinylStage.on .tonearm{transform:rotate(4deg);}
-.tonearm::before{content:"";position:absolute;right:8px;top:0;width:28px;height:28px;border-radius:50%;
-  background:radial-gradient(circle at 35% 35%,#f0f0f4,#b9b9c2);
-  box-shadow:0 2px 6px rgba(0,0,0,.25);}
-.tonearm i{position:absolute;right:19px;top:24px;width:4px;height:100px;border-radius:2px;
-  background:linear-gradient(#d7d7de,#a2a2ae);transform:rotate(6deg);}
-.tonearm i::after{content:"";position:absolute;bottom:-8px;left:50%;width:12px;height:14px;
+.tonearm::before{content:"";position:absolute;right:8px;top:0;width:32px;height:32px;border-radius:50%;
+  background:radial-gradient(circle at 35% 35%,#f0f0f4,#b0b0ba);
+  box-shadow:0 2px 8px rgba(0,0,0,.28);}
+.tonearm i{position:absolute;right:21px;top:28px;width:5px;height:104px;border-radius:2px;
+  background:linear-gradient(#d7d7de,#9a9aa6);transform:rotate(6deg);}
+.tonearm i::after{content:"";position:absolute;bottom:-9px;left:50%;width:14px;height:16px;
   background:#8f8f99;border-radius:3px;transform:translateX(-50%);}
 
 /* 歌名区 */
