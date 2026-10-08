@@ -1,5 +1,5 @@
-/* 知行音乐 Service Worker v1 */
-const CACHE = "zmusic-v28";
+/* 知行音乐 Service Worker v2 */
+const CACHE = "zmusic-v29";
 // 注意：catalog.js 不预缓存（走网络优先），避免大文件导致安装失败
 const SHELL = ["./","./index.html","./style.css","./app.js","./manifest.json","./icon.svg"];
 
@@ -24,7 +24,9 @@ self.addEventListener("fetch", e=>{
         if(!DAV_AUTH) return fetch(e.request);
         const h = new Headers(e.request.headers);
         h.set("Authorization", DAV_AUTH);
-        return fetch(new Request(e.request, {headers:h}));
+        /* 关键：音频元素的请求是 no-cors 模式，会吞掉 Authorization 头；
+           在 SW 里转成 cors 模式重发，认证头才能真正带上（NAS 已配 CORS *） */
+        return fetch(new Request(e.request, {headers:h, mode:"cors"}));
       }catch(err){ return fetch(e.request); }
     })());
     return;

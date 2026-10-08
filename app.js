@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.3 2026-10-07";
+const APP_VER = "v9.4 2026-10-08";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -230,7 +230,12 @@ const url=songUrl(song);
 let lastErr=null;
 for(let attempt=0;attempt<3;attempt++){
 try{
-const r=await fetch(url,{headers:{Authorization:authHeader()}});
+/* 下载加 25 秒熔断：锁屏时整首下载可能卡住不动，超时算失败重试，不无限等 */
+const ctl=new AbortController();
+const abt=setTimeout(()=>{ try{ctl.abort();}catch(_){} },25000);
+let r;
+try{ r=await fetch(url,{headers:{Authorization:authHeader()},signal:ctl.signal}); }
+finally{ clearTimeout(abt); }
 if(r.status===401) throw {code:401,msg:"账号或密码不对（401），去设置页检查"};
 if(r.status===502||r.status===503||r.status===504){
   lastErr={code:r.status,msg:"NAS 返回 "+r.status};
@@ -248,7 +253,7 @@ URL.revokeObjectURL(objCache[old]); delete objCache[old]; delete blobCache[old];
 return ou;
 }catch(e){
 if(e&&e.code===401) throw e;
-if(e instanceof TypeError){ lastErr=e; await new Promise(r2=>setTimeout(r2,1500)); continue; }
+if(e instanceof TypeError||(e&&e.name==="AbortError")){ lastErr=e; await new Promise(r2=>setTimeout(r2,1500)); continue; }
 throw e;
 }
 }
@@ -307,6 +312,7 @@ else { audio.src=songUrl(song); }
 let playPromise=null;
 if(autoplay){
   try{ playPromise=audio.play(); }catch(e){ playPromise=Promise.reject(e); }
+  armBoundary(song); // 无论成功/拒绝/卡住，看门狗都布防
 }
 loading=true; setPlayStatus("正在加载…");
 if(autoplay) toast("正在加载《"+dispTitle(song)+"》…");
@@ -328,9 +334,9 @@ getSongMeta(song).then(m=>{
 // 后台下载完整文件，好了就无缝切到本地（锁屏也能播）
 blobUrl(song).then(()=>trySwapToBlob(song)).catch(()=>{});
 if(playPromise && playPromise.then){
-  playPromise.then(()=>{ loading=false; setPlayStatus(""); hideToast(); prefetchNext(); ensureQueue(); })
+  playWithTimeout(playPromise,8000).then(()=>{ loading=false; setPlayStatus(""); hideToast(); clearBoundary(song); prefetchNext(); ensureQueue(); })
     .catch(e=>playFallback(song,e));
-}else if(autoplay){ loading=false; hideToast(); prefetchNext(); ensureQueue(); }
+}else if(autoplay){ loading=false; hideToast(); clearBoundary(song); prefetchNext(); ensureQueue(); }
 else { loading=false; hideToast(); }
 }
 // 直链失败（如 SW 还没拿到凭据）→ 回退到 fetch+blob
@@ -342,12 +348,15 @@ audio.addEventListener("error",()=>{
 });
 async function playFallback(song, origErr){
   if(queue[qi]!==song) return;
+  armBoundary(song); // 保险：确保看门狗布防
   toast("正在加载《"+dispTitle(song)+"》…");
   try{
     audio.src=await blobUrl(song);
-    await audio.play();
+    await playWithTimeout(audio.play(),8000);
     loading=false; setPlayStatus(""); hideToast();
+    clearBoundary(song);
     renderPlayer();
+    prefetchNext(); // 之前这条路走完不预取，下一首的链条会断，补上
   }catch(e){
     loading=false;
     let msg="";
@@ -361,30 +370,35 @@ async function playFallback(song, origErr){
     try{ console.warn("[连播诊断] play 失败:", (e&&e.name)||"?", (e&&e.message)||e); }catch(_){}
     setPlayStatus(msg); toast(msg,"err",8000);
     if(e && e.code===401) alert(e.msg);
-    /* 锁屏时被系统拒绝：锁屏显示真实暂停状态，解锁/点按后自动重试 */
+    /* 锁屏时被系统拒绝或卡住：锁屏显示真实暂停状态，看门狗会在解锁/点按时重试 */
     try{ if("mediaSession" in navigator) navigator.mediaSession.playbackState="paused"; }catch(_){}
-    scheduleResume(song);
   }
 }
-/* 锁屏时 play() 被系统拒绝后的自动恢复：
-   一旦页面可见（解锁/切回）或用户点按一次，就重试播放 */
-let resumeArmed=false;
-function scheduleResume(song){
-  if(resumeArmed) return;
-  resumeArmed=true;
-  const cleanup=()=>{
-    resumeArmed=false;
-    document.removeEventListener("visibilitychange",onVis);
-    window.removeEventListener("pointerdown",attempt);
-  };
-  const attempt=()=>{
-    if(queue[qi]!==song){ cleanup(); return; }
-    audio.play().then(()=>cleanup()).catch(()=>{});
-  };
-  const onVis=()=>{ if(document.visibilityState==="visible") attempt(); };
-  document.addEventListener("visibilitychange",onVis);
-  window.addEventListener("pointerdown",attempt);
+/* 带超时的 play：锁屏切歌时 play() 可能既不成功也不拒绝（卡住），超时算失败走兜底 */
+function playWithTimeout(promise, ms){
+  ms=ms||8000;
+  const p=(promise&&promise.then)?promise:Promise.resolve(promise);
+  const to=new Promise((_,rej)=>setTimeout(()=>{
+    rej(Object.assign(new Error("切歌超时"),{name:"TimeoutError"}));
+  },ms));
+  return Promise.race([p,to]);
 }
+/* 边界看门狗：每次切歌都记下目标；若一直没播起来（拒绝或卡住），
+   解锁可见/点按时重试。播起来后自动解除。 */
+let boundarySong=null;
+function armBoundary(song){ boundarySong=song; }
+function clearBoundary(song){ if(!song||boundarySong===song) boundarySong=null; }
+function retryBoundary(){
+  const song=boundarySong;
+  if(!song||queue[qi]!==song||!audio.paused) return;
+  try{
+    playWithTimeout(audio.play(),8000).then(()=>clearBoundary(song)).catch(()=>{});
+  }catch(e){}
+}
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible") retryBoundary();
+});
+window.addEventListener("pointerdown",()=>retryBoundary());
 function togglePlay(){
 if(!audio.src && queue.length) return playAt(0);
 if(audio.paused) audio.play(); else audio.pause();
@@ -453,10 +467,12 @@ function preSwitch(){
   qi=ni; ns._swapped=useBlob;
   audioPlaying=false;
   audio.src=useBlob?blob:songUrl(ns);
+  armBoundary(ns);
   const pr=audio.play();
   if(pr&&pr.then){
-    pr.then(()=>{
+    playWithTimeout(pr,8000).then(()=>{
       loading=false; setPlayStatus(""); hideToast();
+      clearBoundary(ns);
       curLyrics=[]; renderLyrics();
       $("fpCoverImg").style.display="none"; $("fpCoverPh").style.display="block";
       $("miniCover").classList.add("hide");
@@ -473,8 +489,8 @@ function preSwitch(){
         updateLikeBtn(ns);
       });
       prefetchNext(); ensureQueue();
-    }).catch(()=>{ song._preSwitched=false; updateMediaSession(ns); scheduleResume(ns); });
-  } else { song._preSwitched=false; }
+    }).catch(()=>{ song._preSwitched=false; updateMediaSession(ns); /* 看门狗保持布防，解锁/点按重试 */ });
+  } else { song._preSwitched=false; clearBoundary(ns); }
 }
 audio.addEventListener("loadedmetadata",()=>{ $("tDur").textContent=fmtTime(audio.duration);});
 
@@ -502,8 +518,8 @@ set("seekbackward",null); set("seekforward",null); set("seekto",null);
 ms.playbackState=audio.paused?"paused":"playing";
 }catch(e){}
 }
-/* 在真正播起来之后重建一次 media session（iOS 会清掉播放开始前注册的） */
-audio.addEventListener("playing",()=>{ const s=queue[qi]; if(s) updateMediaSession(s); });
+/* 在真正播起来之后重建一次 media session（iOS 会清掉播放开始前注册的），同时解除边界看门狗 */
+audio.addEventListener("playing",()=>{ const s=queue[qi]; if(s){ updateMediaSession(s); clearBoundary(s); } });
 audio.addEventListener("pause",()=>{
 try{ if("mediaSession" in navigator) navigator.mediaSession.playbackState="paused"; }catch(e){}
 });
