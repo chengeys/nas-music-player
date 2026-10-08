@@ -1,7 +1,8 @@
+/* 知行音乐 v9.5 — QQ音乐风浅色主题 */
 :root{
-  --bg:#101014; --bg2:#17171d; --bg3:#202028;
-  --fg:#f2f2f5; --muted:#9a9aad; --acc:#31c27c; --acc2:#4ade80;
-  --danger:#ff5c5c; --radius:14px;
+  --bg:#f4f5f7; --card:#ffffff; --fg:#1a1a1e; --muted:#8f8f99;
+  --acc:#31c27c; --acc-dark:#1f9d5c; --danger:#ff5c5c; --radius:14px;
+  --line:#ececf0; --shadow:0 2px 12px rgba(0,0,0,.06);
 }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);
@@ -12,78 +13,104 @@ button{font-family:inherit;}
 
 /* 顶部提示条 */
 #toast{position:fixed;top:calc(8px + env(safe-area-inset-top));left:16px;right:16px;z-index:100;
-  background:#2a2a38;border:1px solid #3d3d52;color:var(--fg);border-radius:12px;
-  padding:12px 16px;font-size:14px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.5);}
-#toast.err{border-color:var(--danger);color:#ffb3b3;}
-#toast.ok{border-color:#4ade80;color:#b3f0c8;}
+  background:#fff;border:1px solid var(--line);color:var(--fg);border-radius:12px;
+  padding:12px 16px;font-size:14px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.12);}
+#toast.err{border-color:var(--danger);color:#d63a3a;}
+#toast.ok{border-color:#4ade80;color:#1f9d5c;}
 
-/* 更多按钮 */
-.more-btn{display:block;width:100%;margin:4px 0 12px;background:none;border:1px solid #3d3d52;
+/* 顶栏 */
+#topbar{position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;align-items:center;
+  padding:calc(10px + env(safe-area-inset-top)) 16px 10px;
+  background:rgba(244,245,247,.92);backdrop-filter:blur(12px);}
+#logo{font-size:18px;font-weight:800;letter-spacing:.5px;}
+#carBtn{background:#fff;border:1px solid var(--line);color:var(--fg);font-size:20px;
+  width:44px;height:44px;border-radius:12px;box-shadow:var(--shadow);}
+
+/* 视图 */
+.view{display:none;padding:8px 0 16px;}
+.view.active{display:block;}
+.block{margin-bottom:20px;padding:0 16px;}
+.block h2{font-size:15px;margin:6px 0 12px;color:var(--fg);font-weight:800;
+  display:flex;align-items:center;gap:8px;}
+.block h2 em{font-style:normal;font-size:12px;color:var(--muted);font-weight:400;}
+.mini-btn{background:#e8f7ef;border:none;color:var(--acc-dark);border-radius:8px;
+  font-size:12px;padding:4px 10px;margin-left:2px;font-weight:600;}
+.more-btn{display:block;width:calc(100% - 32px);margin:4px 16px 12px;background:#fff;border:1px solid var(--line);
   color:var(--muted);border-radius:10px;padding:10px;font-size:13px;}
-.more-btn:active{background:#2a2a38;}
 
-/* QQ音乐风：音乐馆首页 */
-.qq-banner{padding:20px 16px 6px;}
-.qq-greet{font-size:26px;font-weight:800;letter-spacing:1px;}
-.qq-sub{font-size:13px;color:var(--muted);margin-top:6px;}
+/* 首页搜索框 */
+.qq-searchbar{margin:8px 16px 4px;background:#fff;border-radius:20px;padding:11px 16px;
+  display:flex;align-items:center;gap:8px;color:var(--muted);font-size:14px;
+  box-shadow:var(--shadow);}
+.qs-ico{font-size:16px;}
+.qs-ph{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+/* 首页 banner */
+.qq-banner{padding:10px 16px 2px;}
+.qq-banner-inner{border-radius:20px;padding:22px 18px;color:#fff;position:relative;overflow:hidden;
+  background:linear-gradient(135deg,#35c37f,#178a52);
+  box-shadow:0 8px 24px rgba(49,194,124,.35);}
+.qq-banner-inner::after{content:"♪";position:absolute;right:6px;bottom:-38px;font-size:150px;opacity:.16;pointer-events:none;}
+.qq-greet{font-size:24px;font-weight:800;letter-spacing:1px;}
+.qq-sub{font-size:12px;opacity:.88;margin-top:6px;}
+.banner-btn{position:relative;z-index:1;margin-top:14px;background:rgba(255,255,255,.96);color:#178a52;border:none;
+  border-radius:20px;padding:9px 22px;font-size:13px;font-weight:700;}
+.banner-btn:active{transform:scale(.96);}
+
+/* 快捷入口 */
 .qq-quick{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:14px 16px;}
-.qq-quick button{background:var(--bg2);border:none;border-radius:16px;color:var(--fg);
-  padding:14px 4px;font-size:26px;display:flex;flex-direction:column;align-items:center;gap:6px;}
+.qq-quick button{background:var(--card);border:none;border-radius:16px;color:var(--fg);
+  padding:14px 4px;font-size:26px;display:flex;flex-direction:column;align-items:center;gap:6px;
+  box-shadow:var(--shadow);}
+.qq-quick button i{font-style:normal;}
 .qq-quick button span{font-size:12px;color:var(--muted);}
-.qq-quick button:active{background:var(--bg3);transform:scale(.96);}
+.qq-quick button:active{background:#f0f1f4;transform:scale(.96);}
+
+/* 横滑卡片（猜你喜欢） */
+.card-row{display:flex;gap:12px;overflow-x:auto;padding:4px 16px 10px;margin:0 -16px;
+  -webkit-overflow-scrolling:touch;scrollbar-width:none;}
+.card-row::-webkit-scrollbar{display:none;}
+.song-card{flex:0 0 108px;background:none;border:none;padding:0;text-align:left;}
+.song-card:active{transform:scale(.96);}
+.sc-cover{width:108px;height:108px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+  font-size:42px;color:rgba(255,255,255,.94);font-weight:700;
+  box-shadow:0 4px 14px rgba(0,0,0,.16);}
+.sc-cover span{pointer-events:none;}
+.sc-title{font-size:13px;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--fg);}
+.sc-artist{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
+
+/* 合集卡片 */
 .qq-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
 .qq-card{position:relative;border:none;border-radius:16px;overflow:hidden;padding:0;
   aspect-ratio:16/10;color:#fff;text-align:left;cursor:pointer;
-  box-shadow:0 4px 16px rgba(0,0,0,.35);}
+  box-shadow:0 4px 16px rgba(0,0,0,.18);}
 .qq-card .qq-card-bg{position:absolute;inset:0;}
 .qq-card .qq-card-info{position:absolute;left:0;right:0;bottom:0;padding:10px 12px;
   background:linear-gradient(transparent,rgba(0,0,0,.65));}
 .qq-card .qq-card-info b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .qq-card .qq-card-info span{font-size:11px;opacity:.85;}
 .qq-card .qq-play{position:absolute;right:10px;top:10px;width:36px;height:36px;border-radius:50%;
-  background:rgba(255,255,255,.92);color:#111;font-size:15px;display:flex;
+  background:rgba(255,255,255,.94);color:#111;font-size:15px;display:flex;
   align-items:center;justify-content:center;}
 .qq-card:active{transform:scale(.97);}
 
-/* 顶栏 */
-#topbar{position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;align-items:center;
-  padding:calc(10px + env(safe-area-inset-top)) 16px 10px;
-  background:rgba(20,20,26,.92);backdrop-filter:blur(12px);}
-#logo{font-size:18px;font-weight:700;}
-#carBtn{background:var(--bg3);border:none;color:var(--fg);font-size:20px;
-  width:44px;height:44px;border-radius:12px;}
-
-/* 视图 */
-.view{display:none;padding:8px 16px 16px;}
-.view.active{display:block;}
-.block{margin-bottom:22px;}
-.block h2{font-size:16px;margin:6px 0 10px;color:var(--fg);}
-.mini-btn{background:var(--bg3);border:none;color:var(--acc2);border-radius:8px;
-  font-size:12px;padding:4px 10px;margin-left:6px;}
-
 /* 歌曲列表 */
-.songlist{display:flex;flex-direction:column;gap:6px;}
-.song{display:flex;align-items:center;gap:10px;background:var(--bg2);
-  border-radius:var(--radius);padding:10px 12px;text-align:left;border:none;color:var(--fg);width:100%;}
-.song:active{background:var(--bg3);}
+.songlist{display:flex;flex-direction:column;gap:8px;}
+.song{display:flex;align-items:center;gap:10px;background:var(--card);
+  border-radius:var(--radius);padding:11px 12px;text-align:left;border:none;color:var(--fg);width:100%;
+  box-shadow:var(--shadow);}
+.song:active{background:#f0f1f4;}
 .song .idx{color:var(--muted);font-size:12px;min-width:26px;text-align:center;}
 .song .tt{flex:1;min-width:0;}
-.song .tt b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.song .tt span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;}
+.song .tt b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;}
+.song .tt span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;margin-top:2px;}
 .song .go{color:var(--muted);}
 .empty{color:var(--muted);font-size:14px;text-align:center;padding:18px 0;}
 
-/* 合集 */
-.folderlist{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
-.folder{background:var(--bg2);border:none;color:var(--fg);border-radius:var(--radius);
-  padding:14px 10px;font-size:13px;text-align:center;}
-.folder b{display:block;font-size:22px;color:var(--acc2);margin-bottom:4px;}
-.folder:active{background:var(--bg3);}
-
 /* 搜索 */
-.searchbar{display:flex;gap:8px;margin:8px 0 4px;}
-.searchbar input{flex:1;background:var(--bg2);border:1px solid var(--bg3);color:var(--fg);
-  border-radius:12px;padding:12px 14px;font-size:16px;outline:none;}
+.searchbar{display:flex;gap:8px;margin:8px 16px 4px;}
+.searchbar input{flex:1;background:var(--card);border:1px solid var(--line);color:var(--fg);
+  border-radius:12px;padding:12px 14px;font-size:16px;outline:none;box-shadow:var(--shadow);}
 .searchbar input:focus{border-color:var(--acc);}
 #micBtn{width:52px;border-radius:12px;border:none;font-size:24px;
   background:var(--acc);color:#fff;}
@@ -92,103 +119,138 @@ button{font-family:inherit;}
 .hint{color:var(--muted);font-size:13px;line-height:1.6;}
 
 /* 设置 */
+#view-settings .block{background:var(--card);border-radius:18px;margin:0 16px 16px;padding:18px 16px;
+  box-shadow:var(--shadow);}
+#view-settings .block h2{margin-top:0;}
 label{display:block;font-size:14px;color:var(--muted);margin:12px 0;}
-label input{display:block;width:100%;margin-top:6px;background:var(--bg2);
-  border:1px solid var(--bg3);color:var(--fg);border-radius:12px;
+label input{display:block;width:100%;margin-top:6px;background:var(--bg);
+  border:1px solid var(--line);color:var(--fg);border-radius:12px;
   padding:12px 14px;font-size:16px;outline:none;}
+label input:focus{border-color:var(--acc);}
 .row{display:flex;gap:10px;margin-top:8px;}
 .btn{flex:1;background:var(--acc);border:none;color:#fff;border-radius:12px;
   padding:12px;font-size:15px;font-weight:600;}
-.btn.ghost{background:var(--bg3);color:var(--fg);}
+.btn.ghost{background:#eef0f3;color:var(--fg);}
 .btn.danger{color:var(--danger);}
-#connStatus.ok{color:#4ade80;} #connStatus.err{color:var(--danger);}
+#connStatus.ok{color:#1f9d5c;} #connStatus.err{color:var(--danger);}
 
 /* 迷你播放器 */
 #miniPlayer{position:fixed;left:0;right:0;bottom:calc(64px + env(safe-area-inset-bottom));z-index:30;
   max-width:640px;margin:0 auto;display:flex;align-items:center;gap:12px;
-  background:rgba(28,28,40,.97);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  padding:20px 16px 14px;border-top:1px solid #3d3d52;border-radius:18px 18px 0 0;
-  box-shadow:0 -6px 24px rgba(0,0,0,.45);cursor:pointer;min-height:84px;}
-#miniCover{width:54px;height:54px;border-radius:12px;object-fit:cover;background:#2a2a38;flex-shrink:0;}
+  background:rgba(255,255,255,.97);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  padding:22px 16px 14px;border-top:1px solid var(--line);border-radius:18px 18px 0 0;
+  box-shadow:0 -6px 24px rgba(0,0,0,.08);cursor:pointer;min-height:84px;}
+#miniCover{width:52px;height:52px;border-radius:10px;object-fit:cover;background:#e8eaee;flex-shrink:0;}
 #miniCover.hide{display:none;}
 #miniInfo{flex:1;min-width:0;}
-#miniInfo b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-#miniInfo span{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;}
-#miniPlayer button{background:#2e2e40;border:none;color:var(--fg);font-size:20px;width:50px;height:50px;
+#miniInfo b{display:block;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#miniInfo span{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;margin-top:2px;}
+#miniPlayer button{background:#f0f1f4;border:none;color:var(--fg);font-size:20px;width:48px;height:48px;
   border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-#miniPlayer button:active{background:#3d3d52;transform:scale(.94);}
-#miniPlayer button.primary{background:var(--acc);font-size:22px;width:56px;height:56px;}
+#miniPlayer button:active{background:#e4e6eb;transform:scale(.94);}
+#miniPlayer button.primary{background:var(--acc);color:#fff;font-size:22px;width:54px;height:54px;}
 
 /* 迷你播放条进度（可拖动） */
 #miniProg{position:absolute;top:0;left:14px;right:14px;height:26px;z-index:5;touch-action:none;}
 #miniProg::before{content:"";position:absolute;top:11px;left:0;right:0;height:4px;
-  background:#3d3d52;border-radius:2px;}
+  background:#e4e6eb;border-radius:2px;}
 #miniProgFill{position:absolute;top:11px;left:0;height:4px;background:var(--acc);width:0%;border-radius:2px;}
 #miniProgKnob{position:absolute;top:7px;left:0%;width:13px;height:13px;background:#fff;border-radius:50%;
-  transform:translateX(-50%);box-shadow:0 2px 8px rgba(0,0,0,.5);pointer-events:none;}
+  transform:translateX(-50%);box-shadow:0 2px 8px rgba(0,0,0,.25);pointer-events:none;}
 
-/* 全屏播放器 */
-#fullPlayer{position:fixed;inset:0;z-index:50;background:linear-gradient(180deg,#1b1b28,#101016);
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:24px;gap:8px;}
-#closePlayer{align-self:flex-start;background:none;border:none;color:var(--muted);font-size:28px;}
-#fpCover{font-size:110px;margin:10px 0;filter:drop-shadow(0 8px 24px rgba(124,92,255,.35));}
-#fpTitle{font-size:22px;font-weight:700;text-align:center;}
-#fpArtist{color:var(--acc2);font-size:15px;}
-/* 播放页（QQ音乐风） */
+/* 全屏播放器（QQ音乐风黑胶） */
 #fullPlayer{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;
-  background:linear-gradient(180deg,#1a1a22,#101014);overflow:hidden;}
-#fpBg{position:absolute;inset:0;z-index:0;opacity:.35;filter:blur(60px) saturate(1.4);
+  background:linear-gradient(180deg,#f7f8fa 0%,#eef1f4 60%,#e9edf1 100%);overflow:hidden;}
+#fpBg{position:absolute;inset:0;z-index:0;opacity:.10;filter:blur(60px) saturate(1.4);
   background-size:cover;background-position:center;pointer-events:none;
   transition:background-image .5s;}
 #fullPlayer>*{position:relative;z-index:1;}
 .fp-head{display:flex;justify-content:space-between;align-items:center;
   padding:calc(12px + env(safe-area-inset-top)) 12px 4px;}
 .fp-head button{background:none;border:none;color:var(--fg);font-size:22px;padding:8px 12px;}
-.fp-titles{flex:1;text-align:center;min-width:0;}
-.fp-titles #fpTitle{font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.fp-titles #fpArtist{font-size:13px;color:var(--muted);margin-top:3px;}
-#fpTab{font-size:13px!important;border:1px solid #3d3d52!important;border-radius:16px!important;
-  padding:6px 14px!important;}
-.fp-cover-wrap{display:flex;justify-content:center;margin:18px 0 8px;}
-#fpCoverImg{width:240px;height:240px;object-fit:cover;border-radius:20px;
-  box-shadow:0 16px 48px rgba(0,0,0,.6);}
-#fpCoverPh{width:240px;height:240px;border-radius:20px;background:var(--bg3);
-  font-size:100px;display:flex;align-items:center;justify-content:center;}
-.fp-actions{display:flex;justify-content:center;gap:44px;margin:6px 0;}
-.fp-actions button{background:none;border:none;color:var(--muted);font-size:24px;padding:6px;}
-.fp-actions button.liked{color:#ff5c7a;}
-#fpLyrics{flex:1;overflow-y:auto;margin:4px 0;min-height:100px;
+.fp-head-title{font-size:14px;color:var(--muted);letter-spacing:2px;}
+
+/* 黑胶 */
+.vinyl-stage{position:relative;display:flex;justify-content:center;padding:20px 0 6px;}
+.vinyl{position:relative;width:min(70vw,300px);aspect-ratio:1;border-radius:50%;
+  background:repeating-radial-gradient(circle,#151515 0 2px,#242424 2px 4px);
+  box-shadow:0 18px 44px rgba(0,0,0,.30), inset 0 0 0 1px rgba(255,255,255,.07);
+  animation:vinylspin 14s linear infinite;animation-play-state:paused;}
+#vinylStage.on .vinyl{animation-play-state:running;}
+@keyframes vinylspin{to{transform:rotate(360deg);}}
+.vinyl::after{content:"";position:absolute;left:50%;top:50%;width:12px;height:12px;
+  background:#f4f5f7;border-radius:50%;transform:translate(-50%,-50%);
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.4);z-index:2;}
+.vinyl-label{position:absolute;left:31%;top:31%;width:38%;height:38%;border-radius:50%;
+  object-fit:cover;z-index:1;}
+.vinyl-label.ph{display:flex;align-items:center;justify-content:center;font-size:44px;color:#fff;
+  background:linear-gradient(135deg,#35c37f,#178a52);}
+/* 唱臂 */
+.tonearm{position:absolute;top:2px;right:9%;width:80px;height:130px;z-index:3;pointer-events:none;
+  transform-origin:78% 6%;transform:rotate(-26deg);transition:transform .9s ease;}
+#vinylStage.on .tonearm{transform:rotate(4deg);}
+.tonearm::before{content:"";position:absolute;right:8px;top:0;width:28px;height:28px;border-radius:50%;
+  background:radial-gradient(circle at 35% 35%,#f0f0f4,#b9b9c2);
+  box-shadow:0 2px 6px rgba(0,0,0,.25);}
+.tonearm i{position:absolute;right:19px;top:24px;width:4px;height:100px;border-radius:2px;
+  background:linear-gradient(#d7d7de,#a2a2ae);transform:rotate(6deg);}
+.tonearm i::after{content:"";position:absolute;bottom:-8px;left:50%;width:12px;height:14px;
+  background:#8f8f99;border-radius:3px;transform:translateX(-50%);}
+
+/* 歌名区 */
+.fp-song{display:flex;align-items:center;justify-content:space-between;
+  padding:10px 28px 0;}
+.fp-titles{flex:1;min-width:0;}
+.fp-titles #fpTitle{font-size:21px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.fp-titles #fpArtist{font-size:14px;color:var(--muted);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#fpLike{background:none;border:none;font-size:26px;color:var(--muted);padding:6px 2px 6px 12px;}
+#fpLike.liked{color:#ff5c7a;}
+
+/* 操作区 */
+.fp-actions{display:flex;justify-content:center;gap:52px;margin:8px 0 2px;}
+.fp-actions button{background:none;border:none;color:var(--muted);font-size:22px;padding:8px;min-width:44px;}
+.fp-actions button:active{color:var(--acc);}
+#fpTab{font-size:15px!important;font-weight:700;border:1px solid var(--line)!important;
+  border-radius:14px!important;padding:5px 14px!important;background:#fff;}
+
+/* 歌词 */
+#fpLyrics{flex:1;overflow-y:auto;margin:6px 0;min-height:90px;
   -webkit-overflow-scrolling:touch;text-align:center;
   -webkit-mask-image:linear-gradient(transparent,#000 15%,#000 85%,transparent);
   mask-image:linear-gradient(transparent,#000 15%,#000 85%,transparent);}
-.lrc-line{padding:6px 12px;font-size:15px;color:#7a7a8a;line-height:1.6;transition:all .3s;}
-.lrc-line.active{color:#fff;font-size:18px;font-weight:700;}
-.lrc-line.passed{color:#4a4a5a;}
-#fpDetail{flex:1;overflow-y:auto;margin:6px 16px;font-size:14px;line-height:2.2;color:var(--muted);}
+.lrc-line{padding:7px 16px;font-size:15px;color:#a2a2ab;line-height:1.6;transition:all .3s;}
+.lrc-line.active{color:var(--acc-dark);font-size:18px;font-weight:700;}
+.lrc-line.passed{color:#c9c9d1;}
+#fpDetail{flex:1;overflow-y:auto;margin:6px 28px;font-size:14px;line-height:2.2;color:var(--muted);}
 #fpDetail b{color:var(--fg);}
-.fp-progress{display:flex;align-items:center;gap:10px;padding:0 20px;}
+
+/* 进度条 */
+.fp-progress{display:flex;align-items:center;gap:10px;padding:0 24px;}
 .fp-progress span{font-size:11px;color:var(--muted);min-width:36px;}
 .fp-progress span:last-child{text-align:right;}
 #seek{flex:1;accent-color:var(--acc);height:28px;}
-#fpControls{display:flex;align-items:center;justify-content:center;gap:30px;
-  margin:8px 0 4px;}
-#fpControls button{background:none;border:none;color:var(--fg);font-size:24px;
-  width:56px;height:56px;border-radius:50%;}
-#fpControls button:active{background:rgba(255,255,255,.08);}
-#fpControls .big{font-size:30px;width:76px;height:76px;background:var(--acc);color:#fff;
-  box-shadow:0 6px 20px rgba(49,194,124,.4);}
-#fpMode,#fpList{font-size:20px!important;color:var(--muted)!important;}
-#playStatus{text-align:center;min-height:20px;padding:0 20px 8px;}
+
+/* 控制区 */
+#fpControls{display:flex;align-items:center;justify-content:center;gap:44px;margin:6px 0 2px;}
+#fpControls button{background:none;border:none;color:var(--fg);font-size:28px;
+  width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;}
+#fpControls button:active{background:rgba(0,0,0,.06);}
+#fpControls .big{font-size:30px;width:78px;height:78px;background:var(--acc);color:#fff;
+  box-shadow:0 8px 22px rgba(49,194,124,.42);}
+.fp-subcontrols{display:flex;align-items:center;justify-content:center;gap:60px;margin:2px 0;}
+.fp-subcontrols button{background:none;border:none;font-size:20px;color:var(--muted);
+  width:48px;height:40px;}
+.fp-subcontrols button:active{color:var(--acc);}
+#playStatus{text-align:center;min-height:20px;padding:0 20px calc(10px + env(safe-area-inset-bottom));}
 
 /* 底部导航 */
 #tabbar{position:fixed;left:0;right:0;bottom:0;z-index:40;max-width:640px;margin:0 auto;
-  display:flex;background:rgba(20,20,26,.96);backdrop-filter:blur(12px);
-  border-top:1px solid #2a2a36;padding-bottom:env(safe-area-inset-bottom);}
+  display:flex;background:rgba(255,255,255,.96);backdrop-filter:blur(12px);
+  border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom);}
 #tabbar button{flex:1;background:none;border:none;color:var(--muted);font-size:20px;
   padding:10px 0 8px;display:flex;flex-direction:column;align-items:center;gap:2px;}
 #tabbar button span{font-size:11px;}
-#tabbar button.active{color:var(--acc2);}
+#tabbar button.active{color:var(--acc-dark);}
 
 /* 车载模式 */
 body.car{font-size:20px;}

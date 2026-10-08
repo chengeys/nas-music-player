@@ -1,5 +1,5 @@
 /* 知行音乐 Service Worker v2 */
-const CACHE = "zmusic-v29";
+const CACHE = "zmusic-v30";
 // 注意：catalog.js 不预缓存（走网络优先），避免大文件导致安装失败
 const SHELL = ["./","./index.html","./style.css","./app.js","./manifest.json","./icon.svg"];
 
