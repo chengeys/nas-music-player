@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>知行音乐</title>
-<meta name="theme-color" content="#f4f5f7">
+<meta name="theme-color" content="#14141a">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="知行音乐">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon.svg">
@@ -20,39 +20,35 @@
   <!-- 顶部栏 -->
   <header id="topbar">
     <span id="logo">🎵 知行音乐</span>
+    <span style="flex:1"></span>
+    <button id="userBtn" title="账号">👤</button>
     <button id="carBtn" title="车载模式">🚗</button>
   </header>
 
   <!-- 推荐页（音乐馆） -->
   <section id="view-home" class="view active">
-    <div class="qq-searchbar" id="homeSearchBar">
-      <span class="qs-ico">🔍</span><span class="qs-ph">搜歌名 / 歌手，如：晴天 周杰伦</span>
-    </div>
     <div class="qq-banner">
-      <div class="qq-banner-inner">
-        <div class="qq-greet" id="qqGreet">音乐馆</div>
-        <div class="qq-sub" id="qqStats">-</div>
-        <button class="banner-btn" id="bannerShuffle">▶&nbsp;随机播放</button>
-      </div>
+      <div class="qq-greet" id="qqGreet">音乐馆</div>
+      <div class="qq-sub" id="qqStats">-</div>
     </div>
     <div class="qq-quick">
-      <button data-go="rec"><i>❤️</i><span>猜你喜欢</span></button>
-      <button data-go="recent"><i>🕘</i><span>最近播放</span></button>
-      <button data-go="shuffle"><i>🎲</i><span>随机听</span></button>
-      <button data-go="folders"><i>📁</i><span>我的合集</span></button>
+      <button data-go="rec">❤️<span>猜你喜欢</span></button>
+      <button data-go="recent">🕘<span>最近播放</span></button>
+      <button data-go="shuffle">🎲<span>随机听</span></button>
+      <button data-go="folders">📁<span>我的合集</span></button>
+    </div>
+    <div class="block" id="blockFolders">
+      <h2>我的合集</h2>
+      <div id="folderList" class="qq-grid"></div>
     </div>
     <div class="block" id="blockRec">
-      <h2>Daily Picks <em>猜你喜欢</em><button id="refreshRec" class="mini-btn">换一批</button></h2>
-      <div id="recList" class="card-row"><p class="empty">多听几首，推荐越准</p></div>
+      <h2>猜你喜欢 <button id="refreshRec" class="mini-btn">换一批</button></h2>
+      <div id="recList" class="songlist"><p class="empty">多听几首，推荐越准</p></div>
       <button id="recMore" class="more-btn" style="display:none"></button>
     </div>
     <div class="block" id="blockRecent">
-      <h2>Recent <em>继续听</em></h2>
+      <h2>继续听</h2>
       <div id="recentList" class="songlist"><p class="empty">还没有播放记录，听几首歌就记住了</p></div>
-    </div>
-    <div class="block" id="blockFolders">
-      <h2>Collections <em>我的合集</em></h2>
-      <div id="folderList" class="qq-grid"></div>
     </div>
   </section>
 
@@ -66,10 +62,23 @@
     <div id="searchList" class="songlist"><p class="empty">在上面输入，或按 🎤 说句话</p></div>
   </section>
 
+  <!-- 我的歌单页 -->
+  <section id="view-playlists" class="view">
+    <div class="block">
+      <h2>我的歌单 <button id="newPlaylistBtn" class="mini-btn">＋新建</button></h2>
+      <div id="playlistList" class="songlist"><p class="empty">登录后歌单多设备同步</p></div>
+    </div>
+    <div class="block" id="playlistDetailBlock" style="display:none">
+      <h2 id="playlistDetailName">歌单</h2>
+      <div id="playlistDetailList" class="songlist"></div>
+      <button id="backToPlaylists" class="btn ghost">‹ 返回歌单列表</button>
+    </div>
+  </section>
+
   <!-- 设置页 -->
   <section id="view-settings" class="view">
     <div class="block">
-      <h2>Settings <em>NAS 连接</em></h2>
+      <h2>NAS 连接</h2>
       <label>NAS 音乐地址
         <input id="cfgDav" type="url" placeholder="https://nas.yjm.ccwu.cc/dav">
       </label>
@@ -87,7 +96,15 @@
       <p class="hint">密码只保存在本机浏览器里，不会上传到任何地方。</p>
     </div>
     <div class="block">
-      <h2>Data <em>数据</em></h2>
+      <h2>账号</h2>
+      <p class="hint" id="accountHint">游客模式：收藏和记录只保存在这台设备。登录后多设备同步。</p>
+      <div class="row">
+        <button id="accountBtn" class="btn">登录 / 注册</button>
+        <button id="logoutBtn" class="btn ghost" style="display:none">退出登录</button>
+      </div>
+    </div>
+    <div class="block">
+      <h2>数据</h2>
       <div class="row">
         <button id="clearHist" class="btn ghost danger">清除播放记录</button>
       </div>
@@ -108,28 +125,23 @@
     <button id="miniNext">⏭</button>
   </div>
 
-  <!-- 全屏播放器（QQ音乐风黑胶） -->
+  <!-- 全屏播放器（QQ音乐风） -->
   <div id="fullPlayer" style="display:none">
     <div id="fpBg"></div>
     <div class="fp-head">
-      <button id="closePlayer" title="收起">﹀</button>
-      <div class="fp-head-title">知行音乐</div>
-      <button id="fpShare" title="分享">↗</button>
-    </div>
-    <div class="vinyl-stage" id="vinylStage">
-      <div class="tonearm"><i></i></div>
-      <div class="vinyl" id="vinyl">
-        <img id="fpCoverImg" class="vinyl-label" alt="封面" style="display:none">
-        <div id="fpCoverPh" class="vinyl-label ph">🎵</div>
-      </div>
-    </div>
-    <div class="fp-song">
+      <button id="closePlayer">﹀</button>
       <div class="fp-titles"><div id="fpTitle">-</div><div id="fpArtist">-</div></div>
-      <button id="fpLike" title="我喜欢">♡</button>
+      <button id="fpTab">详情</button>
+    </div>
+    <div class="fp-cover-wrap">
+      <img id="fpCoverImg" alt="封面" style="display:none">
+      <div id="fpCoverPh">🎵</div>
     </div>
     <div class="fp-actions">
+      <button id="fpLike" title="我喜欢">♡</button>
+      <button id="fpAdd" title="加入歌单">＋</button>
       <button id="fpDl" title="详情">ⓘ</button>
-      <button id="fpTab" title="歌词/详情">词</button>
+      <button id="fpShare" title="分享">↗</button>
     </div>
     <div id="fpLyrics"></div>
     <div id="fpDetail" style="display:none"></div>
@@ -139,26 +151,59 @@
       <span id="tDur">0:00</span>
     </div>
     <div id="fpControls">
+      <button id="fpMode" title="播放模式">🔁</button>
       <button id="fpPrev">⏮</button>
       <button id="fpToggle" class="big">⏸</button>
       <button id="fpNext">⏭</button>
-    </div>
-    <div class="fp-subcontrols">
-      <button id="fpMode" title="播放模式">🔁</button>
       <button id="fpList" title="播放列表">☰</button>
     </div>
     <p id="playStatus" class="hint"></p>
+  </div>
+
+  <!-- 登录弹窗 -->
+  <div id="loginModal" style="display:none">
+    <div class="modal-card">
+      <h2 id="loginTitle">登录</h2>
+      <div class="row" style="margin-bottom:10px">
+        <button id="tabLogin" class="btn ghost">登录</button>
+        <button id="tabRegister" class="btn ghost">注册</button>
+      </div>
+      <label>用户名
+        <input id="loginUser" type="text" placeholder="2-20 位，字母/数字/中文" autocomplete="username">
+      </label>
+      <label>密码
+        <input id="loginPass" type="password" placeholder="4 位以上" autocomplete="current-password">
+      </label>
+      <p id="loginErr" class="hint err" style="display:none"></p>
+      <div class="row">
+        <button id="loginGo" class="btn">登录</button>
+        <button id="loginGuest" class="btn ghost">游客继续</button>
+      </div>
+      <button id="loginClose" class="btn ghost" style="margin-top:10px">关闭</button>
+      <p class="hint">密码加密后保存，可多设备同步收藏、歌单和播放记录。</p>
+    </div>
+  </div>
+
+  <!-- 加入歌单弹窗 -->
+  <div id="addToPlaylistModal" style="display:none">
+    <div class="modal-card">
+      <h2>加入歌单</h2>
+      <div id="addToPlaylistList" class="songlist"></div>
+      <button id="addToPlaylistClose" class="btn ghost" style="margin-top:10px">关闭</button>
+    </div>
   </div>
 
   <!-- 底部导航 -->
   <nav id="tabbar">
     <button data-view="view-home" class="active">🏠<span>推荐</span></button>
     <button data-view="view-search">🔍<span>搜歌</span></button>
+    <button data-view="view-playlists">🎵<span>歌单</span></button>
     <button data-view="view-settings">⚙️<span>设置</span></button>
   </nav>
 </div>
 
 <script src="catalog.js"></script>
+<script src="cloud.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
