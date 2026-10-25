@@ -31,6 +31,13 @@ button{font-family:inherit;}
   padding:14px 4px;font-size:26px;display:flex;flex-direction:column;align-items:center;gap:6px;}
 .qq-quick button span{font-size:12px;color:var(--muted);}
 .qq-quick button:active{background:var(--bg3);transform:scale(.96);}
+.qq-run{padding:0 16px 4px;}
+.qq-run button{width:100%;border:none;border-radius:16px;color:#fff;cursor:pointer;
+  background:linear-gradient(135deg,#31c27c,#1db954 55%,#0ea968);
+  padding:14px 16px;font-size:19px;font-weight:700;display:flex;flex-direction:column;align-items:flex-start;gap:4px;
+  box-shadow:0 6px 18px rgba(29,185,84,.35);}
+.qq-run button span{font-size:12px;font-weight:400;opacity:.85;}
+.qq-run button:active{transform:scale(.98);}
 .qq-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
 .qq-card{position:relative;border:none;border-radius:16px;overflow:hidden;padding:0;
   aspect-ratio:16/10;color:#fff;text-align:left;cursor:pointer;
