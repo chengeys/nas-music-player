@@ -316,7 +316,7 @@ const FS_SRC=[
 "void main(){",
 "  vec3 ori=texture2D(t,v).rgb;",
 "  vec3 blr=gauss(v);",
-"  vec3 col=mix(ori,blr,smooth*0.35)+(ori-blr)*(1.0-smooth*0.9);",
+"  vec3 col=blr+(ori-blr)*(1.0-smooth*0.92);",
 "  col=pow(col,vec3(1.0-white*0.35));",
 "  col+=white*0.10*(1.0-col);",
 "  if(mode==1){ float lum=dot(col,vec3(0.299,0.587,0.114)); col=mix(vec3(lum),col,1.12); col=(col-0.5)*1.05+0.5; }",
@@ -363,7 +363,7 @@ function renderLoop(){
     gl.bindTexture(gl.TEXTURE_2D,glTex);
     try{ gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,cam); }catch(e){}
     const smv=parseFloat($("rgSmooth").value)/100;
-    const rad=1.0+smv*3.5;
+    const rad=1.0+smv*7.0;
     gl.uniform2f(glLoc.px,rad/cv.width,rad/cv.height);
     gl.uniform1f(glLoc.smooth,smv);
     gl.uniform1f(glLoc.white,parseFloat($("rgWhite").value)/100);
