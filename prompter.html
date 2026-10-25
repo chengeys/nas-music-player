@@ -114,13 +114,13 @@
 const $=id=>document.getElementById(id);
 const LS_KEY="prompter_script_v1";
 const SAMPLE=[
-"商标申请被驳回，是不是就白花钱了？",
-"前几天一个当事人找我，商标被驳回，原因是跟别人三年前注册的商标近似",
-"先别急着放弃，那个拦路的商标如果已经满三年没使用",
+"\u3010\u94a9\u5b50\u3011商标申请被驳回，是不是就白花钱了？",
+"\u3010\u6848\u4f8b\u3011前几天一个当事人找我，商标被驳回，原因是跟别人三年前注册的商标近似",
+"\u3010\u529e\u6cd5\u3011先别急着放弃，那个拦路的商标如果已经满三年没使用",
 "你可以一边申请撤销它，一边提驳回复审，两步并行",
 "很多看着没希望的商标，最后都是这么救回来的",
-"我是杨景明律师，专做知识产权和行政案件",
-"你也有商标被驳回的，评论区说说情况，我帮你看看还有没有救"
+"\u3010\u8eab\u4efd\u3011我是杨景明律师，专做知识产权和行政案件",
+"\u3010\u5f15\u5bfc\u3011你也有商标被驳回的，评论区说说情况，我帮你看看还有没有救"
 ].join("\n");
 let lines=[], offset=0, playing=false, lastTs=0, curIdx=-1;
 let stream=null, recorder=null, chunks=[], recStart=0, recTimer=null, lastBlob=null, lastUrl=null, wakeLock=null;
