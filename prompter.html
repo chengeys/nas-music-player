@@ -98,7 +98,6 @@
 </div>
 <div id="beautyPanel">
 <div class="row">
-<div class="grp"><span class="lbl">磨皮</span><input id="rgSmooth" type="range" min="0" max="100" value="45"></div>
 <div class="grp"><span class="lbl">美白</span><input id="rgWhite" type="range" min="0" max="100" value="35"></div>
 <div class="grp"><button id="btnPeek">按住看原图</button></div>
 </div>
@@ -298,25 +297,10 @@ const FS_SRC=[
 "varying vec2 v;",
 "uniform sampler2D t;",
 "uniform vec2 px;",
-"uniform float smooth;",
 "uniform float white;",
 "uniform int mode;",
-"vec3 gauss(vec2 uv){",
-"  vec3 c=texture2D(t,uv).rgb*0.227027;",
-"  c+=texture2D(t,uv+vec2(px.x,0.0)).rgb*0.1945946;",
-"  c+=texture2D(t,uv-vec2(px.x,0.0)).rgb*0.1945946;",
-"  c+=texture2D(t,uv+vec2(0.0,px.y)).rgb*0.1216216;",
-"  c+=texture2D(t,uv-vec2(0.0,px.y)).rgb*0.1216216;",
-"  c+=texture2D(t,uv+vec2(px.x,px.y)).rgb*0.054054;",
-"  c+=texture2D(t,uv-vec2(px.x,px.y)).rgb*0.054054;",
-"  c+=texture2D(t,uv+vec2(px.x,-px.y)).rgb*0.054054;",
-"  c+=texture2D(t,uv-vec2(px.x,-px.y)).rgb*0.054054;",
-"  return c;",
-"}",
 "void main(){",
-"  vec3 ori=texture2D(t,v).rgb;",
-"  vec3 blr=gauss(v);",
-"  vec3 col=blr+(ori-blr)*(1.0-smooth*0.92);",
+"  vec3 col=texture2D(t,v).rgb;",
 "  col=pow(col,vec3(1.0-white*0.35));",
 "  col+=white*0.10*(1.0-col);",
 "  if(mode==1){ float lum=dot(col,vec3(0.299,0.587,0.114)); col=mix(vec3(lum),col,1.12); col=(col-0.5)*1.05+0.5; }",
@@ -349,8 +333,7 @@ function initGL(){
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
-  glLoc={ px:gl.getUniformLocation(glProg,"px"), smooth:gl.getUniformLocation(glProg,"smooth"),
-          white:gl.getUniformLocation(glProg,"white"), mode:gl.getUniformLocation(glProg,"mode") };
+  glLoc={ white:gl.getUniformLocation(glProg,"white"), mode:gl.getUniformLocation(glProg,"mode") };
   return true;
 }
 function renderLoop(){
@@ -362,10 +345,6 @@ function renderLoop(){
     gl.viewport(0,0,cv.width,cv.height);
     gl.bindTexture(gl.TEXTURE_2D,glTex);
     try{ gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,cam); }catch(e){}
-    const smv=parseFloat($("rgSmooth").value)/100;
-    const rad=1.0+smv*7.0;
-    gl.uniform2f(glLoc.px,rad/cv.width,rad/cv.height);
-    gl.uniform1f(glLoc.smooth,smv);
     gl.uniform1f(glLoc.white,parseFloat($("rgWhite").value)/100);
     gl.uniform1i(glLoc.mode,beautyFilter);
     gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
