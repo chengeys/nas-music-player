@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.5 2026-10-25";
+const APP_VER = "v9.6 2026-10-25";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -703,6 +703,7 @@ $("qqGreet").textContent=hr<6?"夜深了":hr<12?"上午好":hr<14?"中午好":hr
 }
 function renderPlayer(){
 const s=queue[qi]; if(!s) return;
+if($("fpQueue") && $("fpQueue").style.display!=="none") renderQueue();
 $("miniPlayer").style.display="flex";
 $("miniTitle").textContent=dispTitle(s);
 $("miniArtist").textContent=dispArtist(s);
@@ -772,7 +773,7 @@ $("miniToggle").onclick=e=>{e.stopPropagation();togglePlay();};
 $("miniNext").onclick=e=>{e.stopPropagation();next();};
 $("miniPrev").onclick=e=>{e.stopPropagation();prev();};
 $("miniPlayer").onclick=()=>{ $("fullPlayer").style.display="flex";
-$("fpDetail").style.display="none"; $("fpLyrics").style.display="block"; $("fpTab").textContent="详情";};
+$("fpDetail").style.display="none"; $("fpQueue").style.display="none"; $("fpLyrics").style.display="block"; $("fpTab").textContent="详情";};
 /* 迷你进度条：点按+拖动跳转 */
 let scrubbing=false;
 function scrubTo(clientX){
@@ -793,6 +794,7 @@ $("fpToggle").onclick=togglePlay; $("fpNext").onclick=()=>next(); $("fpPrev").on
 $("seek").addEventListener("input",()=>{ if(audio.duration) audio.currentTime=$("seek").value/1000*audio.duration;});
 $("fpTab").onclick=()=>{
   const showDetail=$("fpDetail").style.display==="none";
+  $("fpQueue").style.display="none";
   $("fpDetail").style.display=showDetail?"block":"none";
   $("fpLyrics").style.display=showDetail?"none":"block";
   $("fpTab").textContent=showDetail?"歌词":"详情";
@@ -816,9 +818,33 @@ $("fpMode").onclick=()=>{
   $("fpMode").textContent=repeatOne?"🔂":"🔁";
   toast(repeatOne?"单曲循环":"列表循环","",1500);
 };
+/* 当前播放列表面板：看全部队列，点任意一首跳过去 */
+function renderQueue(){
+  const el=$("fpQueueList"); if(!el) return;
+  $("fpQueueTitle").textContent="播放列表（共 "+queue.length+" 首）";
+  el.innerHTML="";
+  if(!queue.length){ el.innerHTML='<p class="empty">队列是空的</p>'; return; }
+  queue.forEach((s,i)=>{
+    const b=document.createElement("div");
+    b.className="song"+(i===qi?" cur":"");
+    b.innerHTML=`<span class="idx">${i===qi?"▶":i+1}</span><span class="tt"><b></b><span></span></span>`;
+    b.querySelector("b").textContent=dispTitle(s);
+    b.querySelector(".tt span").textContent=dispArtist(s)+" · "+(s.f||"");
+    b.onclick=()=>{ playAt(i); };
+    el.appendChild(b);
+  });
+  const cur=el.children[qi];
+  if(cur) cur.scrollIntoView({block:"center"});
+}
+function showQueuePanel(show){
+  $("fpQueue").style.display=show?"block":"none";
+  $("fpLyrics").style.display=show?"none":"block";
+  if(show){ $("fpDetail").style.display="none"; $("fpTab").textContent="详情"; renderQueue(); }
+}
 $("fpList").onclick=()=>{
-  toast(`播放列表共 ${queue.length} 首，当前第 ${qi+1} 首`,"",2500);
+  showQueuePanel($("fpQueue").style.display==="none");
 };
+$("fpQueueClose").onclick=()=>showQueuePanel(false);
 // 设置
 $("saveCfg").onclick=()=>{ cfg.dav=$("cfgDav").value.trim()||cfg.dav;
 cfg.user=$("cfgUser").value.trim()||"ai"; cfg.pass=$("cfgPass").value;
