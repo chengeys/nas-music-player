@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.3 2026-10-14";
+const APP_VER = "v9.4 2026-10-25";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -366,12 +366,13 @@ if(audio.paused) audio.play(); else audio.pause();
 function next(auto=false){
 if(!queue.length) return;
 if(repeatOne && auto){ playAt(qi); return; }
-// 播到队尾：自动接上推荐歌单，不断流
+// 播到队尾：自动接上歌曲，不断流（跑步模式接节奏曲，普通模式接推荐）
 if(qi>=queue.length-1){
-  const recs=recommend(20).filter(s=>queue.indexOf(s)<0);
+  const recs=runMode ? runEnergySongs(new Set(queue.map(s=>s.p)),20)
+                     : recommend(20).filter(s=>queue.indexOf(s)<0);
   if(recs.length){
     queue=queue.concat(recs);
-    if(auto) toast("已接上推荐歌单 ♪", "", 2500);
+    if(auto) toast(runMode?"🏃 已接上节奏燃曲 ♪":"已接上推荐歌单 ♪", "", 2500);
     // 刚接上的第一首立即预取
     const ns=queue[qi+1];
     if(ns && !objCache[ns.p]){ ns._prefetching=true; blobUrl(ns).catch(()=>{}).finally(()=>{ns._prefetching=false;}); getSongMeta(ns).catch(()=>{}); }
@@ -380,10 +381,56 @@ if(qi>=queue.length-1){
 const n=(qi+1)%queue.length;
 playAt(n);
 }
-/* 队列剩3首时提前接推荐，保证预取时间 */
+/* ---------- 跑步模式 · 180 步频 ---------- */
+/* 已知 BPM 曲目表（关键词→BPM）：90 左右 = 每拍两步，正好 180 步频；180 左右 = 每拍一步 */
+const RUN_BPM={"faded":90,"cheap thrills":90,"despacito":89,"all we know":90,"eastside":89,"cold water":93,"bad liar":88};
+const RUN_FOLDERS=["10.欧美节奏控(清爽唤醒活力)(100首)","03-抖音热火DJ中英文嗨曲(240首)","20.精品中文DJ精选(200首)","18.百大DJ(电音之魂)(88首)","19.工体DJ(京城工体)(100首)","14.DJ超嗨电音夜店音乐DJ(104首)","20261007今日全网热门精选优质爆火歌曲"];
+let runMode=false;
+function shuffleArr(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function runStrictSongs(){
+  const byKw={};
+  CATALOG.forEach(s=>{
+    const key=(s.t+" "+s.a).toLowerCase();
+    for(const kw in RUN_BPM){
+      if(key.includes(kw)){
+        const b=RUN_BPM[kw];
+        if((b>=87&&b<=93)||(b>=174&&b<=186)){ (byKw[kw]=byKw[kw]||[]).push(s); }
+        break;
+      }
+    }
+  });
+  const out=[];
+  for(const kw in byKw){
+    // 同一首歌优先留原版（标题不带 Remix/Live/3D 等字样的），最多 2 个版本
+    const clean=byKw[kw].filter(s=>!/remix|live|3d|环绕|震胎|dj版/i.test(s.t+" "+s.p));
+    out.push(...(clean.length?clean:byKw[kw]).slice(0,2));
+  }
+  return out;
+}
+function runEnergySongs(exclude,n){
+  const pool=CATALOG.filter(s=>RUN_FOLDERS.includes(s.f) && !exclude.has(s.p));
+  return shuffleArr(pool.slice()).slice(0,n);
+}
+function startRunRadio(){
+  if(!CATALOG.length){ toast("曲库还没加载完，稍等一下","err",2500); return; }
+  const strict=shuffleArr(runStrictSongs());
+  const seen=new Set(strict.map(s=>s.p));
+  const fill=runEnergySongs(seen, Math.max(0,40-strict.length));
+  queue=strict.concat(fill);
+  runMode=true;
+  playAt(0);
+  toast("🏃 跑步180开跑：共 "+queue.length+" 首连播，其中 "+strict.length+" 首为 90/180 BPM 精准贴合步频，其余为节奏燃曲","",5000);
+}
+/* 队列剩3首时提前接歌，保证不断流；跑步模式下接的也是节奏曲 */
 function ensureQueue(){
   if(!queue.length) return;
   if(queue.length-qi<=3){
+    if(runMode){
+      const seen=new Set(queue.map(s=>s.p));
+      const more=runEnergySongs(seen,20);
+      if(more.length) queue=queue.concat(more);
+      return;
+    }
     const recs=recommend(20).filter(s=>queue.indexOf(s)<0);
     if(recs.length) queue=queue.concat(recs);
   }
@@ -697,6 +744,7 @@ document.querySelectorAll(".qq-quick button").forEach(b=>{
     else if(go==="folders"){ document.getElementById("blockFolders").scrollIntoView({behavior:"smooth"}); }
     else if(go==="shuffle"){
       if(!CATALOG.length) return;
+      runMode=false;
       queue=CATALOG.slice();
       // 洗牌
       for(let i=queue.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [queue[i],queue[j]]=[queue[j],queue[i]]; }
@@ -706,6 +754,7 @@ document.querySelectorAll(".qq-quick button").forEach(b=>{
 });
 $("carBtn").onclick=()=>{ document.body.classList.toggle("car");
 $("carBtn").style.background=document.body.classList.contains("car")?"var(--acc)":"";};
+$("runBtn").onclick=startRunRadio;
 // 播放器
 $("miniToggle").onclick=e=>{e.stopPropagation();togglePlay();};
 $("miniNext").onclick=e=>{e.stopPropagation();next();};
