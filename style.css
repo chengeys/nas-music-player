@@ -173,6 +173,10 @@ label input{display:block;width:100%;margin-top:6px;background:var(--bg2);
 .lrc-line.active{color:#fff;font-size:18px;font-weight:700;}
 .lrc-line.passed{color:#4a4a5a;}
 #fpDetail{flex:1;overflow-y:auto;margin:6px 16px;font-size:14px;line-height:2.2;color:var(--muted);}
+#fpQueue{flex:1;overflow-y:auto;margin:4px 0;min-height:100px;width:100%;-webkit-overflow-scrolling:touch;}
+.fp-queue-head{display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-weight:700;}
+#fpQueueList .song.cur{background:rgba(49,194,124,.15);}
+#fpQueueList .song.cur .tt b{color:var(--acc);}
 #fpDetail b{color:var(--fg);}
 .fp-progress{display:flex;align-items:center;gap:10px;padding:0 20px;}
 .fp-progress span{font-size:11px;color:var(--muted);min-width:36px;}
