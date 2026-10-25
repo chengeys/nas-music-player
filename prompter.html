@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>口播提词器 · 知行</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; background:#000; color:#fff; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; overflow:hidden; }
+  #cam { position:fixed; inset:0; width:100%; height:100%; object-fit:cover; background:#111; }
+  #cam.mirror { transform:scaleX(-1); }
+  #shade { position:fixed; inset:0; background:linear-gradient(180deg, rgba(0,0,0,.55) 0%, rgba(0,0,0,.25) 30%, rgba(0,0,0,0) 55%, rgba(0,0,0,.45) 100%); pointer-events:none; }
+  #promptWrap { position:fixed; left:0; right:0; top:6%; height:44%; overflow:hidden; pointer-events:none;
+    -webkit-mask-image:linear-gradient(transparent,#000 18%,#000 82%,transparent);
+            mask-image:linear-gradient(transparent,#000 18%,#000 82%,transparent); }
+  #prompt { position:absolute; left:5%; right:5%; top:0; will-change:transform; }
+  #prompt .line { font-size:30px; line-height:1.5; font-weight:600; color:rgba(255,255,255,.45);
+    text-shadow:0 2px 8px rgba(0,0,0,.8); padding:10px 0; text-align:center; transition:color .2s; }
+  #prompt .line.cur { color:#fff; }
+  #prompt .line .tag { color:#31c27c; font-size:.62em; vertical-align:.35em; margin-right:.4em; }
+  #topbar { position:fixed; top:0; left:0; right:0; padding:calc(env(safe-area-inset-top) + 10px) 14px 6px;
+    display:flex; justify-content:space-between; align-items:center; font-size:14px; z-index:5; }
+  #recDot { display:none; align-items:center; gap:6px; color:#ff4d4f; font-weight:700; }
+  #recDot i { width:10px; height:10px; border-radius:50%; background:#ff4d4f; display:inline-block; animation:blink 1s infinite; }
+  @keyframes blink { 50% { opacity:.25; } }
+  #controls { position:fixed; left:0; right:0; bottom:0; padding:10px 14px calc(env(safe-area-inset-bottom) + 14px);
+    background:linear-gradient(0deg, rgba(0,0,0,.75), rgba(0,0,0,0)); z-index:5; }
+  .row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px; }
+  .row:first-child { margin-top:0; }
+  .grp { display:flex; align-items:center; gap:8px; }
+  button { font-family:inherit; border:none; cursor:pointer; color:#fff; background:rgba(255,255,255,.16);
+    border-radius:999px; padding:9px 14px; font-size:14px; }
+  button.on { background:#31c27c; color:#04240f; font-weight:700; }
+  #btnRec { width:68px; height:68px; border-radius:50%; background:#fff; padding:0; display:flex; align-items:center; justify-content:center; border:4px solid rgba(255,255,255,.5); }
+  #btnRec i { width:30px; height:30px; border-radius:50%; background:#e02424; display:block; transition:.15s; }
+  #btnRec.rec i { border-radius:6px; width:26px; height:26px; }
+  .lbl { font-size:12px; opacity:.75; }
+  input[type=range] { width:104px; accent-color:#31c27c; }
+  .panel { position:fixed; inset:0; background:rgba(10,10,12,.97); z-index:20; display:none; flex-direction:column; padding:calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 16px); }
+  .panel.open { display:flex; }
+  .panel h2 { font-size:18px; margin-bottom:10px; }
+  .panel p.tip { font-size:13px; color:#9a9aa2; line-height:1.7; margin-bottom:10px; }
+  #editor { flex:1; width:100%; background:#17171b; color:#fff; border:1px solid #2c2c33; border-radius:12px;
+    padding:12px; font-size:16px; line-height:1.8; resize:none; }
+  .panel .bar { display:flex; gap:10px; margin-top:12px; }
+  .panel .bar button { flex:1; padding:13px; font-size:15px; }
+  .primary { background:#31c27c !important; color:#04240f !important; font-weight:700; }
+  #resultVideo { width:100%; max-height:52vh; border-radius:12px; background:#000; }
+  #startGate { position:fixed; inset:0; background:#0b0b0d; z-index:30; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; padding:24px; text-align:center; gap:14px; }
+  #startGate h1 { font-size:24px; }
+  #startGate p { color:#9a9aa2; font-size:14px; line-height:1.8; max-width:340px; }
+  #startGate button { padding:14px 34px; font-size:16px; }
+  #toast { position:fixed; left:50%; top:14%; transform:translateX(-50%); background:rgba(20,20,24,.92);
+    padding:10px 18px; border-radius:999px; font-size:14px; display:none; z-index:40; }
+</style>
+</head>
+<body>
+<video id="cam" class="mirror" autoplay playsinline muted></video>
+<div id="shade"></div>
+<div id="promptWrap"><div id="prompt"></div></div>
+<div id="topbar">
+  <span class="ttl">口播提词器</span>
+  <span id="recDot"><i></i><span id="recTime">00:00</span></span>
+  <button id="btnEdit">✎ 稿子</button>
+</div>
+<div id="controls">
+<div class="row">
+<div class="grp">
+<button id="btnPlay" class="on">▶ 开始读</button>
+<button id="btnTop">↺ 开头</button>
+</div>
+<button id="btnRec"><i></i></button>
+<div class="grp">
+<button id="btnMirror" class="on">镜像</button>
+<button id="btnPure">纯提词</button>
+</div>
+</div>
+<div class="row">
+<div class="grp"><span class="lbl">速度</span><input id="speed" type="range" min="10" max="90" value="34"><span class="lbl" id="speedVal"></span></div>
+<div class="grp"><span class="lbl">字号</span><input id="font" type="range" min="22" max="44" value="30"><span class="lbl" id="fontVal"></span></div>
+</div>
+</div>
+
+<div id="editorPanel" class="panel">
+<h2>编辑口播稿</h2>
+<p class="tip">一行一句，读到哪句哪句变白。行首可加结构标记，如「」。写好点保存，稿子只存在你这台手机里。<br>结构参考：钩子提问 → 真实案例 → 一个办法 → 我是谁+留言引导。60 秒约 220 字。</p>
+<textarea id="editor"></textarea>
+<div class="bar">
+<button id="btnSample">载入示例稿</button>
+<button id="btnEditorClose">取消</button>
+<button id="btnSave" class="primary">保存</button>
+</div>
+</div>
+
+<div id="resultPanel" class="panel">
+<h2>录好了</h2>
+<video id="resultVideo" controls playsinline></video>
+<p class="tip">点「保存到相册」后，在弹出的菜单里选「存储视频」；然后去抖音从相册选这条发。</p>
+<div class="bar">
+<button id="btnDiscard">重录</button>
+<button id="btnShare" class="primary">保存到相册</button>
+</div>
+</div>
+
+<div id="startGate">
+<h1>🏃 口播提词器</h1>
+<p>边跑边录普法口播：台词就贴在镜头旁边自动往上滚，照着读就行。点下面按钮开启摄像头和麦克风（只在本机使用，不上传任何画面）。</p>
+<button id="btnStart" class="primary">开启摄像头，开始</button>
+<button id="btnStartPure">不开摄像头，纯提词</button>
+</div>
+<div id="toast"></div>
+<script>
+const $=id=>document.getElementById(id);
+const LS_KEY="prompter_script_v1";
+const SAMPLE=[
+"商标申请被驳回，是不是就白花钱了？",
+"前几天一个当事人找我，商标被驳回，原因是跟别人三年前注册的商标近似",
+"先别急着放弃，那个拦路的商标如果已经满三年没使用",
+"你可以一边申请撤销它，一边提驳回复审，两步并行",
+"很多看着没希望的商标，最后都是这么救回来的",
+"我是杨景明律师，专做知识产权和行政案件",
+"你也有商标被驳回的，评论区说说情况，我帮你看看还有没有救"
+].join("\n");
+let lines=[], offset=0, playing=false, lastTs=0, curIdx=-1;
+let stream=null, recorder=null, chunks=[], recStart=0, recTimer=null, lastBlob=null, lastUrl=null, wakeLock=null;
+
+function toast(msg,ms=2200){ const t=$("toast"); t.textContent=msg; t.style.display="block"; clearTimeout(t._h); t._h=setTimeout(()=>t.style.display="none",ms);}
+
+function buildLines(text){
+lines=text.split("\n").map(s=>s.trim()).filter(Boolean);
+const box=$("prompt"); box.innerHTML="";
+const focusY=$("promptWrap").offsetHeight*0.42;
+box.style.paddingTop=focusY+"px";
+box.style.paddingBottom=($("promptWrap").offsetHeight-focusY+80)+"px";
+lines.forEach((ln,i)=>{
+const d=document.createElement("div"); d.className="line";
+let tag="", body=ln;
+if(ln.charAt(0)==="\u3010"){ const e=ln.indexOf("\u3011"); if(e>0){ tag=ln.slice(0,e+1); body=ln.slice(e+1); } }
+if(tag){ d.innerHTML="<span class='tag'>"+escapeHtml(tag)+"</span>"+escapeHtml(body); }
+else d.textContent=ln;
+box.appendChild(d);
+});
+offset=0; curIdx=-1; applyOffset(true);
+}
+function escapeHtml(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function applyOffset(force){
+const box=$("prompt");
+box.style.transform="translateY("+(-offset)+"px)";
+const wrapH=$("promptWrap").offsetHeight, focusY=wrapH*0.42;
+let idx=-1;
+for(let i=0;i<box.children.length;i++){
+const el=box.children[i];
+const mid=el.offsetTop-offset+el.offsetHeight/2;
+if(mid<=focusY+30) idx=i; else break;
+}
+if(idx!==curIdx||force){
+curIdx=idx;
+for(let i=0;i<box.children.length;i++) box.children[i].classList.toggle("cur", i===idx);
+}
+}
+function maxOffset(){
+const box=$("prompt");
+return Math.max(0, box.scrollHeight-$("promptWrap").offsetHeight*0.42-90);
+}
+function loop(ts){
+if(!playing) return;
+if(lastTs){
+const dt=(ts-lastTs)/1000;
+offset+=parseFloat($("speed").value)*dt;
+if(offset>=maxOffset()){ offset=maxOffset(); applyOffset(); pausePlay(); toast("读完了"); return;}
+applyOffset();
+}
+lastTs=ts;
+requestAnimationFrame(loop);
+}
+function startPlay(){ if(playing) return; playing=true; lastTs=0; $("btnPlay").textContent="⏸ 暂停"; requestAnimationFrame(loop);}
+function pausePlay(){ playing=false; $("btnPlay").textContent="▶ 开始读";}
+$("btnPlay").onclick=()=> playing?pausePlay():startPlay();
+$("btnTop").onclick=()=>{ offset=0; applyOffset(true);};
+$("promptWrap").addEventListener("click",()=> playing?pausePlay():startPlay());
+function updSpeed(){ $("speedVal").textContent=$("speed").value;}
+function updFont(){ $("fontVal").textContent=$("font").value+"px";
+document.querySelectorAll("#prompt.line").forEach(el=>el.style.fontSize=$("font").value+"px"); applyOffset(true);}
+$("speed").oninput=updSpeed; $("font").oninput=updFont;
+$("btnMirror").onclick=e=>{ $("cam").classList.toggle("mirror"); e.target.classList.toggle("on");};
+$("btnPure").onclick=e=>{
+const on=$("cam").style.display==="none";
+$("cam").style.display=on?"block":"none";
+$("shade").style.display=on?"block":"none";
+e.target.classList.toggle("on",!on);
+toast(on?"已显示镜头":"纯提词模式：黑底大字");
+};
+
+/* 编辑器 */
+$("btnEdit").onclick=()=>{ pausePlay(); $("editor").value=localStorage.getItem(LS_KEY)||SAMPLE; $("editorPanel").classList.add("open");};
+$("btnEditorClose").onclick=()=>$("editorPanel").classList.remove("open");
+$("btnSample").onclick=()=>{ $("editor").value=SAMPLE;};
+$("btnSave").onclick=()=>{
+const v=$("editor").value.trim();
+if(!v){ toast("稿子不能为空"); return;}
+localStorage.setItem(LS_KEY,v);
+buildLines(v); updFont();
+$("editorPanel").classList.remove("open");
+toast("已保存，从头开始读");
+};
+
+/* 摄像头与录制 */
+async function startCam(){
+try{
+stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:{ideal:1920},height:{ideal:1080}},audio:true});
+$("cam").srcObject=stream;
+return true;
+}catch(e){ return false;}
+}
+async function keepAwake(){ try{ wakeLock=await navigator.wakeLock.request("screen");}catch(e){}}
+$("btnStart").onclick=async()=>{
+const ok=await startCam();
+if(!ok){ toast("摄像头没打开，请允许权限，或用纯提词",3200);}
+$("startGate").style.display="none"; keepAwake();
+};
+$("btnStartPure").onclick=()=>{
+$("cam").style.display="none"; $("shade").style.display="none"; $("btnPure").classList.add("on");
+$("startGate").style.display="none"; keepAwake();
+};
+function pickMime(){
+const cand=["video/mp4;codecs=avc1.640028,mp4a.40.2","video/mp4","video/webm;codecs=vp9,opus","video/webm",""];
+for(const m of cand){ if(!m) return ""; try{ if(MediaRecorder.isTypeSupported(m)) return m;}catch(e){}}
+return "";
+}
+function fmt(s){ return String(Math.floor(s/60)).padStart(2,"0")+":"+String(Math.floor(s%60)).padStart(2,"0");}
+$("btnRec").onclick=()=>{
+if(recorder && recorder.state==="recording"){ recorder.stop(); return;}
+if(!stream){ toast("还没开摄像头，刷新页面重新开启"); return;}
+if(typeof MediaRecorder==="undefined"){ toast("这台设备的浏览器不支持网页录制，改用纯提词+相机录",3600); return;}
+chunks=[];
+const mime=pickMime();
+try{ recorder=new MediaRecorder(stream, mime?{mimeType:mime,videoBitsPerSecond:6000000}:{videoBitsPerSecond:6000000});}
+catch(e){ toast("录制启动失败，试试纯提词+相机录",3200); return;}
+recorder.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data);};
+recorder.onstop=()=>{
+clearInterval(recTimer);
+$("btnRec").classList.remove("rec"); $("recDot").style.display="none";
+const type=recorder.mimeType||"video/mp4";
+lastBlob=new Blob(chunks,{type});
+if(lastUrl) URL.revokeObjectURL(lastUrl);
+lastUrl=URL.createObjectURL(lastBlob);
+$("resultVideo").src=lastUrl;
+$("resultPanel").classList.add("open");
+};
+recorder.start(500);
+recStart=Date.now();
+$("btnRec").classList.add("rec"); $("recDot").style.display="flex";
+$("recTime").textContent="00:00";
+recTimer=setInterval(()=>{ $("recTime").textContent=fmt((Date.now()-recStart)/1000);},500);
+if(!playing) startPlay();
+toast("开始录制，照着白字读");
+};
+$("btnDiscard").onclick=()=>{ $("resultPanel").classList.remove("open"); $("resultVideo").pause(); offset=0; applyOffset(true);};
+$("btnShare").onclick=async()=>{
+if(!lastBlob) return;
+const ext=(lastBlob.type.includes("webm")?"webm":"mp4");
+const file=new File([lastBlob],"口播_"+new Date().toISOString().replace(/[:.]/g,"-")+"."+ext,{type:lastBlob.type});
+if(navigator.canShare && navigator.canShare({files:[file]})){
+try{ await navigator.share({files:[file]}); return;}catch(e){ if(e && e.name==="AbortError") return;}
+}
+const a=document.createElement("a"); a.href=lastUrl; a.download=file.name; document.body.appendChild(a); a.click(); a.remove();
+toast("已下载到文件，请到文件里打开再存相册",3200);
+};
+
+/* 初始化 */
+buildLines(localStorage.getItem(LS_KEY)||SAMPLE);
+updSpeed(); updFont();
+window.addEventListener("resize",()=>applyOffset(true));
+</script>
+</body>
+</html>
