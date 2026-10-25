@@ -11,6 +11,7 @@
   #cam.mirror { transform:scaleX(-1); }
   #view { position:fixed; inset:0; width:100%; height:100%; object-fit:cover; background:#111; display:none; }
   #view.mirror { transform:scaleX(-1); }
+  #cam.srcHidden { display:block !important; opacity:0; width:4px; height:4px; inset:auto; left:0; top:0; pointer-events:none; }
   #beautyPanel { display:none; flex-direction:column; }
   #beautyPanel.open { display:flex; }
   .fbtn.on { background:#31c27c; color:#04240f; font-weight:700; }
@@ -97,8 +98,9 @@
 </div>
 <div id="beautyPanel">
 <div class="row">
-<div class="grp"><span class="lbl">磨皮</span><input id="rgSmooth" type="range" min="0" max="100" value="35"></div>
-<div class="grp"><span class="lbl">美白</span><input id="rgWhite" type="range" min="0" max="100" value="25"></div>
+<div class="grp"><span class="lbl">磨皮</span><input id="rgSmooth" type="range" min="0" max="100" value="45"></div>
+<div class="grp"><span class="lbl">美白</span><input id="rgWhite" type="range" min="0" max="100" value="35"></div>
+<div class="grp"><button id="btnPeek">按住看原图</button></div>
 </div>
 </div>
 </div>
@@ -207,7 +209,8 @@ $("speed").oninput=updSpeed; $("font").oninput=updFont;
 $("btnMirror").onclick=e=>{ $("cam").classList.toggle("mirror"); $("view").classList.toggle("mirror"); e.target.classList.toggle("on");};
 let pureOn=false;
 function applyPure(){
-$("cam").style.display=pureOn?"none":(beautyOn?"none":"block");
+if(pureOn || !beautyOn){ $("cam").classList.remove("srcHidden"); $("cam").style.display=pureOn?"none":"block"; }
+else { $("cam").style.display="block"; $("cam").classList.add("srcHidden"); }
 $("view").style.display=pureOn?"none":(beautyOn?"block":"none");
 $("shade").style.display=pureOn?"none":"block";
 $("btnPure").classList.toggle("on",pureOn);
@@ -313,9 +316,9 @@ const FS_SRC=[
 "void main(){",
 "  vec3 ori=texture2D(t,v).rgb;",
 "  vec3 blr=gauss(v);",
-"  vec3 col=blr+(ori-blr)*(1.0-smooth*0.85);",
-"  col=pow(col,vec3(1.0-white*0.22));",
-"  col+=white*0.05*(1.0-col);",
+"  vec3 col=mix(ori,blr,smooth*0.35)+(ori-blr)*(1.0-smooth*0.9);",
+"  col=pow(col,vec3(1.0-white*0.35));",
+"  col+=white*0.10*(1.0-col);",
 "  if(mode==1){ float lum=dot(col,vec3(0.299,0.587,0.114)); col=mix(vec3(lum),col,1.12); col=(col-0.5)*1.05+0.5; }",
 "  else if(mode==2){ col*=vec3(1.09,1.0,0.88); }",
 "  else if(mode==3){ col*=vec3(0.93,1.0,1.09); }",
@@ -359,8 +362,10 @@ function renderLoop(){
     gl.viewport(0,0,cv.width,cv.height);
     gl.bindTexture(gl.TEXTURE_2D,glTex);
     try{ gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,cam); }catch(e){}
-    gl.uniform2f(glLoc.px,1.5/cv.width,1.5/cv.height);
-    gl.uniform1f(glLoc.smooth,parseFloat($("rgSmooth").value)/100);
+    const smv=parseFloat($("rgSmooth").value)/100;
+    const rad=1.0+smv*3.5;
+    gl.uniform2f(glLoc.px,rad/cv.width,rad/cv.height);
+    gl.uniform1f(glLoc.smooth,smv);
     gl.uniform1f(glLoc.white,parseFloat($("rgWhite").value)/100);
     gl.uniform1i(glLoc.mode,beautyFilter);
     gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
@@ -376,6 +381,9 @@ function recStream(){
   }
   return stream;
 }
+$("btnPeek").addEventListener("pointerdown",e=>{ e.preventDefault(); if(!beautyOn) return;
+  $("view").style.display="none"; $("cam").classList.remove("srcHidden"); $("cam").style.display="block"; });
+["pointerup","pointercancel","pointerleave"].forEach(ev=>$("btnPeek").addEventListener(ev,()=>{ if(beautyOn&&!pureOn) applyPure(); }));
 $("btnBeauty").onclick=()=>{
   if(!beautyOn){
     if(!stream){ toast("先开摄像头再开美颜"); return; }
