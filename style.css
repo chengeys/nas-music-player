@@ -171,7 +171,10 @@ label input{display:block;width:100%;margin-top:6px;background:var(--bg2);
   -webkit-overflow-scrolling:touch;text-align:center;
   -webkit-mask-image:linear-gradient(transparent,#000 15%,#000 85%,transparent);
   mask-image:linear-gradient(transparent,#000 15%,#000 85%,transparent);}
-.lrc-line{padding:6px 12px;font-size:15px;color:#7a7a8a;line-height:1.6;transition:all .3s;}
+.lrc-line{padding:6px 12px;font-size:15px;color:#7a7a8a;line-height:1.6;transition:all .3s;cursor:pointer;}
+#lrcSeekChip{position:absolute;right:14px;top:50%;transform:translateY(-50%);z-index:5;
+  background:rgba(49,194,124,.92);color:#fff;font-size:13px;font-weight:700;
+  padding:7px 12px;border-radius:16px;box-shadow:0 4px 16px rgba(0,0,0,.4);cursor:pointer;}
 .lrc-line.active{color:#fff;font-size:18px;font-weight:700;}
 .lrc-line.passed{color:#4a4a5a;}
 #fpDetail{flex:1;overflow-y:auto;margin:6px 16px;font-size:14px;line-height:2.2;color:var(--muted);}

@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.15 2026-10-27";
+const APP_VER = "v9.16 2026-10-27";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -207,9 +207,68 @@ function syncLyrics(){
   curLrcIdx=idx;
   if(ch[idx]){
     ch[idx].className="lrc-line active";
-    ch[idx].scrollIntoView({block:"center",behavior:"smooth"});
+    if(Date.now()>=lrcHoldUntil) ch[idx].scrollIntoView({block:"center",behavior:"smooth"});
   }
 }
+/* 滑动歌词跳转（v9.16）：滑动歌词停稳后，按停留在列表中央那行的时间跳播；
+   浏览期间暂停自动跟随滚动防抢夺；点某行也可直接跳；中央行时间以浮标提示 */
+let lrcTouchAt=0, lrcHoldUntil=0, lrcSeekTimer=null, lrcChipTimer=null;
+function lrcCenterIdx(){
+  const el=$("fpLyrics"), ch=el.children;
+  if(!ch.length) return -1;
+  const mid=el.getBoundingClientRect().top+el.clientHeight/2;
+  let best=-1, bd=1e18;
+  for(let i=0;i<ch.length;i++){
+    const r=ch[i].getBoundingClientRect();
+    const d=Math.abs(r.top+r.height/2-mid);
+    if(d<bd){ bd=d; best=i; }
+  }
+  return best;
+}
+function lrcTimedIdx(i){ while(i>=0 && (!curLyrics[i] || curLyrics[i].t<0)) i--; return i; }
+function lrcSeekTo(i){
+  const idx=lrcTimedIdx(i);
+  if(idx<0) return;
+  const t=curLyrics[idx].t;
+  if(isFinite(t) && Math.abs(audio.currentTime-t)>=1){
+    audio.currentTime=t;
+    curLrcIdx=-1; syncLyrics();
+  }
+}
+function lrcShowChip(){
+  const el=$("lrcSeekChip"); if(!el) return;
+  const idx=lrcTimedIdx(lrcCenterIdx());
+  if(idx<0){ el.style.display="none"; return; }
+  el.textContent="▶ "+fmtTime(curLyrics[idx].t);
+  el.style.display="block";
+  clearTimeout(lrcChipTimer);
+  lrcChipTimer=setTimeout(()=>{ el.style.display="none"; },1800);
+}
+(function(){
+  const el=$("fpLyrics"); if(!el) return;
+  const onTouch=()=>{ lrcTouchAt=Date.now(); lrcHoldUntil=Date.now()+4000; };
+  el.addEventListener("touchstart",onTouch,{passive:true});
+  el.addEventListener("wheel",onTouch,{passive:true});
+  el.addEventListener("touchend",()=>{ lrcHoldUntil=Math.min(lrcHoldUntil, Date.now()+1500); },{passive:true});
+  el.addEventListener("scroll",()=>{
+    if(!lrcTouchAt || Date.now()-lrcTouchAt>2000) return; // 自动跟随滚动不触发跳转
+    lrcHoldUntil=Date.now()+2500;
+    lrcShowChip();
+    clearTimeout(lrcSeekTimer);
+    lrcSeekTimer=setTimeout(()=>{
+      lrcSeekTo(lrcCenterIdx());
+      lrcTouchAt=0; lrcHoldUntil=Date.now()+800;
+    },450);
+  },{passive:true});
+  el.addEventListener("click",e=>{
+    const line=e.target.closest ? e.target.closest(".lrc-line") : null;
+    if(!line) return;
+    const i=Array.prototype.indexOf.call(el.children, line);
+    if(i>=0){ lrcHoldUntil=Date.now()+800; lrcSeekTo(i); }
+  });
+  const chip=$("lrcSeekChip");
+  if(chip) chip.addEventListener("click",()=>{ lrcHoldUntil=Date.now()+800; lrcSeekTo(lrcCenterIdx()); });
+})();
 function renderDetail(s){
   const fmt=(s.p.split(".").pop()||"").toUpperCase();
   $("fpDetail").innerHTML=
