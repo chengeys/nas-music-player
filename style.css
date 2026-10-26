@@ -157,7 +157,9 @@ label input{display:block;width:100%;margin-top:6px;background:var(--bg2);
 .fp-titles #fpArtist{font-size:13px;color:var(--muted);margin-top:3px;}
 #fpTab{font-size:13px!important;border:1px solid #3d3d52!important;border-radius:16px!important;
   padding:6px 14px!important;}
-.fp-cover-wrap{display:flex;justify-content:center;margin:18px 0 8px;}
+/* 播放页不再显示封面大图（v9.14 用户要求）：整页给歌词，照片只在详情页显示 */
+.fp-cover-wrap{display:none;}
+.fp-detail-cover{display:block;width:190px;height:190px;object-fit:cover;border-radius:14px;margin:10px auto 16px;}
 #fpCoverImg{width:240px;height:240px;object-fit:cover;border-radius:20px;
   box-shadow:0 16px 48px rgba(0,0,0,.6);}
 #fpCoverPh{width:240px;height:240px;border-radius:20px;background:var(--bg3);

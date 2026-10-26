@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.13 2026-10-26";
+const APP_VER = "v9.14 2026-10-27";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -121,22 +121,56 @@ function parseLRC(text){
   return lines;
 }
 let curLyrics=[], curLrcIdx=-1, metaCache={};
-/* 歌词/封面：单独取文件头 2MB 解析，不阻塞播放 */
-async function getSongMeta(song){
+let curCoverUrl="", lyricsLoading=false;
+/* 歌词/封面：只取 ID3 标签的实际大小，不阻塞播放。
+   此前固定取满 2MB 等下完才解析，慢网下歌词比开播还慢；
+   先取 10 字节读出标签大小，再按需取（一般标签只有几百 KB） */
+function getSongMeta(song){
   if(metaCache[song.p]) return metaCache[song.p];
-  const m={lyrics:null,coverUrl:null};
-  try{
-    const r=await fetch(songUrl(song),{
-      headers:{Authorization:authHeader(), Range:"bytes=0-2097151"}
-    });
-    if(r.ok){
-      const id3=parseID3(await r.arrayBuffer());
-      m.coverUrl=id3.coverUrl;
-      if(id3.lyrics) m.lyrics=parseLRC(id3.lyrics);
-    }
-  }catch(e){}
-  metaCache[song.p]=m;
-  return m;
+  const p=(async()=>{
+    const m={lyrics:null,coverUrl:null};
+    try{
+      const H={Authorization:authHeader()};
+      let buf=null;
+      const r1=await fetch(songUrl(song),{headers:Object.assign({},H,{Range:"bytes=0-9"})});
+      if(r1.ok){
+        const h=new Uint8Array(await r1.arrayBuffer());
+        if(h.length>=10 && h[0]===0x49 && h[1]===0x44 && h[2]===0x33){ // "ID3"
+          const tagTotal=10+((h[6]<<21)|(h[7]<<14)|(h[8]<<7)|h[9]);
+          const want=Math.max(10, Math.min(tagTotal, 2097152));
+          if(want>10){
+            const r2=await fetch(songUrl(song),{headers:Object.assign({},H,{Range:"bytes=0-"+(want-1)})});
+            if(r2.ok) buf=await r2.arrayBuffer();
+          }
+        }
+      }
+      if(!buf){ // 非 ID3（如 FLAC）或按需取失败：回退原来的整段取法
+        const r=await fetch(songUrl(song),{headers:Object.assign({},H,{Range:"bytes=0-2097151"})});
+        if(r.ok) buf=await r.arrayBuffer();
+      }
+      if(buf){
+        const id3=parseID3(buf);
+        m.coverUrl=id3.coverUrl;
+        if(id3.lyrics) m.lyrics=parseLRC(id3.lyrics);
+      }
+    }catch(e){}
+    return m;
+  })();
+  metaCache[song.p]=p;
+  return p;
+}
+/* 歌词/封面到达后应用：播放页只显示歌词，封面进详情页（迷你条小图保留） */
+function applyMeta(song){
+  lyricsLoading=true;
+  getSongMeta(song).then(m=>{
+    if(queue[qi]!==song) return;
+    lyricsLoading=false;
+    curLyrics=m.lyrics||[]; renderLyrics();
+    curCoverUrl=m.coverUrl||"";
+    if(curCoverUrl){ $("miniCover").src=curCoverUrl; $("miniCover").classList.remove("hide"); }
+    if($("fpDetail").style.display!=="none") renderDetail(song);
+    updateLikeBtn(song);
+  }).catch(()=>{});
 }
 /* 把认证头推给 SW，用于 <audio> 直链 */
 function pushAuthToSW(){
@@ -151,7 +185,7 @@ function pushAuthToSW(){
 function renderLyrics(){
   const el=$("fpLyrics"); el.innerHTML=""; curLrcIdx=-1;
   if(!curLyrics.length){
-    el.innerHTML='<div class="lrc-line">这首歌没有内嵌歌词</div>'; return;
+    el.innerHTML='<div class="lrc-line">'+(lyricsLoading?"歌词加载中…":"这首歌没有内嵌歌词")+'</div>'; return;
   }
   curLyrics.forEach(l=>{
     const d=document.createElement("div");
@@ -179,6 +213,7 @@ function syncLyrics(){
 function renderDetail(s){
   const fmt=(s.p.split(".").pop()||"").toUpperCase();
   $("fpDetail").innerHTML=
+    (curCoverUrl?'<img class="fp-detail-cover" src="'+curCoverUrl+'" alt="封面">':"")+
     "<div><b>歌名：</b>"+escapeHtml(dispTitle(s))+"</div>"+
     "<div><b>歌手：</b>"+escapeHtml(dispArtist(s)||"未知")+"</div>"+
     "<div><b>合集：</b>"+escapeHtml(s.f||"-")+"</div>"+
@@ -323,21 +358,13 @@ if(autoplay){
 }
 loading=true; setPlayStatus("正在加载…");
 if(autoplay) toast("正在加载《"+dispTitle(song)+"》…");
-curLyrics=[]; renderLyrics();
-$("fpCoverImg").style.display="none"; $("fpCoverPh").style.display="block";
+curLyrics=[]; lyricsLoading=true; renderLyrics();
+curCoverUrl="";
 $("miniCover").classList.add("hide");
+$("fpBg").style.backgroundImage="none";
 renderPlayer(); updateMediaSession(song);
 logPlay(song,false);
-getSongMeta(song).then(m=>{
-  if(queue[qi]!==song) return;
-  curLyrics=m.lyrics||[]; renderLyrics();
-  if(m.coverUrl){
-    $("fpCoverImg").src=m.coverUrl; $("fpCoverImg").style.display="block"; $("fpCoverPh").style.display="none";
-    $("miniCover").src=m.coverUrl; $("miniCover").classList.remove("hide");
-    $("fpBg").style.backgroundImage=`url("${m.coverUrl}")`;
-  } else { $("fpBg").style.backgroundImage="none"; }
-  updateLikeBtn(song);
-});
+applyMeta(song);
 // 后台下载完整文件，好了就无缝切到本地（锁屏也能播）
 blobUrl(song).then(()=>trySwapToBlob(song)).catch(()=>{});
 if(playPromise && playPromise.then){
@@ -556,25 +583,17 @@ function preSwitch(){
   qi=ni; ns._swapped=useBlob;
   audioPlaying=false;
   audio.src=useBlob?blob:songUrl(ns);
+  // 歌词与切歌同时开始加载，不等 play() 成功（此前要等开播后才取歌词）
+  curLyrics=[]; lyricsLoading=true; renderLyrics();
+  curCoverUrl="";
+  $("miniCover").classList.add("hide");
+  $("fpBg").style.backgroundImage="none";
+  applyMeta(ns);
   const pr=audio.play();
   if(pr&&pr.then){
     pr.then(()=>{
       loading=false; setPlayStatus(""); hideToast();
-      curLyrics=[]; renderLyrics();
-      $("fpCoverImg").style.display="none"; $("fpCoverPh").style.display="block";
-      $("miniCover").classList.add("hide");
-      $("fpBg").style.backgroundImage="none";
       renderPlayer(); updateMediaSession(ns); logPlay(ns,false);
-      getSongMeta(ns).then(m=>{
-        if(queue[qi]!==ns) return;
-        curLyrics=m.lyrics||[]; renderLyrics();
-        if(m.coverUrl){
-          $("fpCoverImg").src=m.coverUrl; $("fpCoverImg").style.display="block"; $("fpCoverPh").style.display="none";
-          $("miniCover").src=m.coverUrl; $("miniCover").classList.remove("hide");
-          $("fpBg").style.backgroundImage=`url("${m.coverUrl}")`;
-        }
-        updateLikeBtn(ns);
-      });
       prefetchNext(); ensureQueue();
     }).catch(()=>{ /* 提前切歌失败就不重试，留给 ended→next 与看门狗兜底（v9.13：此前反复重试会来回跳） */ });
   }
