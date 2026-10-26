@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.6 2026-10-25";
+const APP_VER = "v9.7 2026-10-26";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -255,10 +255,15 @@ throw lastErr||{code:0,msg:"重试3次仍失败"};
 
 /* 双保险播放：先流式秒播，后台下载完整文件后无缝切换（保锁屏） */
 let fbRetry=false;
+/* 连播容错：连续加载失败计数 + 卡住看门狗计时器 */
+let failStreak=0;
+let stallTimer=null;
 /* 跟踪是否真正在播放（playing 事件），避免切源时撞车 */
 let audioPlaying=false;
 audio.addEventListener("playing",()=>{
   audioPlaying=true;
+  const cs=queue[qi]; if(cs) cs._played=true;
+  failStreak=0; clearTimeout(stallTimer);
   trySwapToBlob(queue[qi]); // 播起来了，补一次切本地
 });
 audio.addEventListener("pause",()=>{ audioPlaying=false; });
@@ -295,7 +300,8 @@ document.addEventListener("visibilitychange",()=>{
 function playAt(i, autoplay=true){
 if(i<0||i>=queue.length) return;
 qi=i; const song=queue[qi]; fbRetry=false;
-song._swapped=false; song._preSwitched=false;
+song._swapped=false; song._preSwitched=false; song._played=false;
+try{ pushAuthToSW(); }catch(e){} // 每次播放前把 NAS 凭据再推给 SW（新域名 SW 刚就位时防直链 401）
 // 有预取好的本地文件就直接用（锁屏连播可靠），否则走流式秒播
 const cached=objCache[song.p];
 audioPlaying=false;
@@ -330,6 +336,15 @@ if(playPromise && playPromise.then){
     .catch(e=>playFallback(song,e));
 }else if(autoplay){ loading=false; hideToast(); prefetchNext(); ensureQueue(); }
 else { loading=false; hideToast(); }
+// 切歌看门狗：45 秒还没真正播起来（NAS 通道半死不活卡住时），当失败处理自动跳下一首
+clearTimeout(stallTimer);
+if(autoplay){
+  stallTimer=setTimeout(()=>{
+    if(queue[qi]===song && !song._played && audio.currentTime===0 && !audio.ended){
+      handleSongFailed(song, {msg:"加载超时"});
+    }
+  }, 45000);
+}
 }
 // 直链失败（如 SW 还没拿到凭据）→ 回退到 fetch+blob
 audio.addEventListener("error",()=>{
@@ -338,6 +353,20 @@ audio.addEventListener("error",()=>{
     fbRetry=true; playFallback(song, new Error("audio error"));
   }
 });
+/* 一首歌彻底加载失败：自动跳下一首保住连播；连坏太多首（或队列只有一首）才停下报错 */
+function handleSongFailed(song, e, msg){
+  if(queue[qi]!==song) return;
+  loading=false;
+  failStreak++;
+  const cap=Math.min(queue.length||1, 8);
+  if(queue.length<=1 || failStreak>=cap){
+    const m=msg||("播放失败："+((e&&e.msg)||e||"加载失败"));
+    setPlayStatus(m); toast(m,"err",8000);
+    return;
+  }
+  toast("《"+dispTitle(song)+"》加载失败，自动下一首","err",3000);
+  playAt((qi+1)%queue.length);
+}
 async function playFallback(song, origErr){
   if(queue[qi]!==song) return;
   toast("正在加载《"+dispTitle(song)+"》…");
@@ -355,8 +384,9 @@ async function playFallback(song, origErr){
     }
     else if(e && e.name==="NotAllowedError"){ msg="iOS 阻止了播放：请再点一次这首歌"; }
     else msg="播放失败："+((e&&e.msg)||e);
-    setPlayStatus(msg); toast(msg,"err",8000);
-    if(e && e.code===401) alert(e.msg);
+    if(e && e.code===401){ setPlayStatus(msg); toast(msg,"err",8000); alert(e.msg); return; }
+    if(e && e.name==="NotAllowedError"){ setPlayStatus(msg); toast(msg,"err",8000); return; }
+    handleSongFailed(song, e, msg);
   }
 }
 function togglePlay(){
