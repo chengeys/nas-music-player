@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.8 2026-10-26";
+const APP_VER = "v9.9 2026-10-26";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -20,8 +20,14 @@ let bin = ""; bytes.forEach(b=>bin+=String.fromCharCode(b));
 return btoa(bin);
 }
 function authHeader(){ return "Basic " + b64encodeUnicode(cfg.user+":"+cfg.pass);}
+/* 取歌通道：在 app.ipls.cn 域名下走本站 /dav 直达转发（经 Cloudflare 就近直达家里 NAS，
+   不再绕香港那台服务器的反代）；其他域名仍用设置里填的地址。账号密码始终用设置里的 */
+function davBase(){
+if(location.hostname==="app.ipls.cn") return location.origin+"/dav";
+return cfg.dav.replace(/\/+$/,"");
+}
 function songUrl(song){
-const base = cfg.dav.replace(/\/+$/,"");
+const base = davBase();
 return base + song.p.split("/").map(encodeURIComponent).join("/");
 }
 function norm(s){
@@ -786,7 +792,7 @@ document.querySelectorAll("#tabbar button").forEach(b=>b.classList.toggle("activ
 /* ---------- 设置 ---------- */
 async function testConn(){
 const el=$("connStatus"); el.className="hint"; el.textContent="测试中…";
-const base=cfg.dav.replace(/\/+$/,"");
+const base=davBase();
 try{
 const r=await fetch(base+"/music/",{method:"PROPFIND",
 headers:{Authorization:authHeader(),Depth:"1"}});
