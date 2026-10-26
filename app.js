@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.7 2026-10-26";
+const APP_VER = "v9.8 2026-10-26";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -258,6 +258,8 @@ let fbRetry=false;
 /* 连播容错：连续加载失败计数 + 卡住看门狗计时器 */
 let failStreak=0;
 let stallTimer=null;
+/* 播放进度看门狗状态：上次进度时间/位置、自救次数 */
+let lastProgAt=Date.now(), lastProgTime=0, stallActs=0;
 /* 跟踪是否真正在播放（playing 事件），避免切源时撞车 */
 let audioPlaying=false;
 audio.addEventListener("playing",()=>{
@@ -301,6 +303,7 @@ function playAt(i, autoplay=true){
 if(i<0||i>=queue.length) return;
 qi=i; const song=queue[qi]; fbRetry=false;
 song._swapped=false; song._preSwitched=false; song._played=false;
+stallActs=0; lastProgAt=Date.now(); lastProgTime=0;
 try{ pushAuthToSW(); }catch(e){} // 每次播放前把 NAS 凭据再推给 SW（新域名 SW 刚就位时防直链 401）
 // 有预取好的本地文件就直接用（锁屏连播可靠），否则走流式秒播
 const cached=objCache[song.p];
@@ -483,6 +486,34 @@ if(audio.currentTime>3){ audio.currentTime=0; return;}
 playAt((qi-1+queue.length)%queue.length);
 }
 audio.addEventListener("ended",()=>{ const s=queue[qi]; if(s) logPlay(s,true); next(true);});
+/* 播放卡死看门狗：一首歌已开播后，进度超过 10 秒不动（没暂停、没结束）就自救：
+   先切到后台下好的本地整首续播；没有本地缓存（或切完还卡）就直接跳下一首。
+   专治"卡在最后几秒不结束、也不切歌"——数据流尾巴断了时 ended 永不触发的情况 */
+audio.addEventListener("timeupdate",()=>{ if(!audio.paused){ lastProgAt=Date.now(); lastProgTime=audio.currentTime; } });
+audio.addEventListener("progress",()=>{ if(!audio.paused) lastProgAt=Date.now(); });
+setInterval(()=>{
+  if(!queue.length || qi<0) return;
+  const song=queue[qi]; if(!song || !song._played) return; // 没开播的归开头加载看门狗管
+  if(audio.paused || audio.ended) return;
+  if(audio.currentTime>0 && Math.abs(audio.currentTime-lastProgTime)>0.05){ lastProgAt=Date.now(); lastProgTime=audio.currentTime; return; }
+  if(Date.now()-lastProgAt<10000) return;
+  if(stallActs>=2) return;
+  stallActs++; lastProgAt=Date.now();
+  const ou=objCache[song.p];
+  if(ou && !song._swapped){
+    try{
+      song._swapped=true;
+      const t=audio.currentTime;
+      audio.src=ou; audio.currentTime=t;
+      const pr=audio.play(); if(pr&&pr.catch) pr.catch(()=>{});
+      toast("播放卡住了，切换本地缓存续播","",2500);
+      return;
+    }catch(e){}
+  }
+  toast("《"+dispTitle(song)+"》卡住，自动下一首","err",3000);
+  logPlay(song,true);
+  next(true);
+},4000);
 audio.addEventListener("play",syncPlayBtns);
 audio.addEventListener("pause",syncPlayBtns);
 /* v8.5 方式：不上报位置，避免干扰 iOS 连播和按钮 */
