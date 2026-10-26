@@ -1,7 +1,8 @@
 /* 知行音乐 v1 — 云端账号模块：登录/注册/收藏/歌单/播放记录同步到 Cloudflare D1 */
 "use strict";
 const Cloud = (()=>{
-const BASE = "https://music-api.ipls.cn";
+// app.ipls.cn 域名下走本站 /api/ 同源转发（music-api 的 CORS 只放行老域名，直连会被浏览器拦）
+const BASE = location.hostname === "app.ipls.cn" ? "" : "https://music-api.ipls.cn";
 const TKEY = "zmusic.cloud.token", UKEY = "zmusic.cloud.user";
 
 function getToken(){ try{ return localStorage.getItem(TKEY) || ""; }catch(e){ return ""; } }
