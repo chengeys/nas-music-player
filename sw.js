@@ -1,5 +1,5 @@
 /* 知行音乐 Service Worker v1 */
-const CACHE = "zmusic-v38";
+const CACHE = "zmusic-v39";
 // 注意：catalog.js 不预缓存（走网络优先），避免大文件导致安装失败
 const SHELL = ["./","./index.html","./style.css","./app.js","./cloud.js","./manifest.json","./icon.svg"];
 
@@ -60,20 +60,27 @@ self.addEventListener("fetch", e=>{
   // NAS 音频：凡是 /dav/ 路径（老通道 yjm.ccwu.cc 或新直达 app.ipls.cn/dav）都注入认证头，支持 <audio> 流式直播
   if(u.pathname.startsWith("/dav/")){
     e.respondWith((async()=>{
+      // 带认证发请求。关键坑（v9.13）：<audio> 直链是 no-cors 请求，
+      // 克隆它再塞 Authorization 会被 fetch 规范静默过滤（CORS 安全清单外），
+      // 表现就是"页面 fetch 能过、媒体请求必 401"。GET 一律改走 cors 模式重发。
+      const send = async auth=>{
+        const h = new Headers(e.request.headers);
+        h.set("Authorization", auth);
+        if(e.request.method==="GET"){
+          return fetch(e.request.url, {method:"GET", headers:h, mode:"cors", credentials:"omit", redirect:"follow"});
+        }
+        return fetch(new Request(e.request, {headers:h}));
+      };
       try{
         const auth=await getAuth();
         if(!auth) return fetch(e.request);
-        const h = new Headers(e.request.headers);
-        h.set("Authorization", auth);
-        let r = await fetch(new Request(e.request, {headers:h}));
+        let r = await send(auth);
         if(r.status===401){
           // 内存里的凭据可能已过期（如刚改过密码）：从持久化重读一次再试
           const stored=await idbGetAuth();
           if(stored && stored!==auth){
             DAV_AUTH=stored;
-            const h2 = new Headers(e.request.headers);
-            h2.set("Authorization", stored);
-            r = await fetch(new Request(e.request, {headers:h2}));
+            r = await send(stored);
           }
         }
         return r;

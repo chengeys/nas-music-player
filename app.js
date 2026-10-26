@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.12 2026-10-26";
+const APP_VER = "v9.13 2026-10-26";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -365,6 +365,7 @@ audio.addEventListener("error",()=>{
 /* 一首歌彻底加载失败：自动跳下一首保住连播；连坏太多首（或队列只有一首）才停下报错 */
 function handleSongFailed(song, e, msg){
   if(queue[qi]!==song) return;
+  if(e && e.name==="AbortError") return; // play() 被新一首的加载打断是正常切歌，不算失败（v9.13：此前会误判连环跳歌）
   loading=false;
   failStreak++;
   const cap=Math.min(queue.length||1, 8);
@@ -378,6 +379,7 @@ function handleSongFailed(song, e, msg){
 }
 async function playFallback(song, origErr){
   if(queue[qi]!==song) return;
+  if(fbRetry) return; fbRetry=true; // 同一首只回退一次：error 事件与 play() 拒绝两条路此前会各跑一遍、互相打断（v9.13）
   toast("正在加载《"+dispTitle(song)+"》…");
   try{
     audio.src=await blobUrl(song);
@@ -386,6 +388,7 @@ async function playFallback(song, origErr){
     renderPlayer();
   }catch(e){
     loading=false;
+    if(e && e.name==="AbortError") return; // 被更新的加载打断，安静退出，控制权已交给新歌
     let msg="";
     if(e && e.code===401){ msg=e.msg; }
     else if(e instanceof TypeError){
@@ -573,8 +576,8 @@ function preSwitch(){
         updateLikeBtn(ns);
       });
       prefetchNext(); ensureQueue();
-    }).catch(()=>{ song._preSwitched=false; });
-  } else { song._preSwitched=false; }
+    }).catch(()=>{ /* 提前切歌失败就不重试，留给 ended→next 与看门狗兜底（v9.13：此前反复重试会来回跳） */ });
+  }
 }
 audio.addEventListener("loadedmetadata",()=>{ $("tDur").textContent=fmtTime(audio.duration);});
 
