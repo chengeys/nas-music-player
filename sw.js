@@ -1,5 +1,5 @@
 /* 知行音乐 Service Worker v1 */
-const CACHE = "zmusic-v34";
+const CACHE = "zmusic-v35";
 // 注意：catalog.js 不预缓存（走网络优先），避免大文件导致安装失败
 const SHELL = ["./","./index.html","./style.css","./app.js","./cloud.js","./manifest.json","./icon.svg"];
 
@@ -17,8 +17,8 @@ self.addEventListener("activate", e=>{
 });
 self.addEventListener("fetch", e=>{
   const u = new URL(e.request.url);
-  // NAS 音频：注入认证头，支持 <audio> 流式直播
-  if(u.hostname.endsWith("yjm.ccwu.cc") && u.pathname.startsWith("/dav/")){
+  // NAS 音频：凡是 /dav/ 路径（老通道 yjm.ccwu.cc 或新直达 app.ipls.cn/dav）都注入认证头，支持 <audio> 流式直播
+  if(u.pathname.startsWith("/dav/")){
     e.respondWith((async()=>{
       try{
         if(!DAV_AUTH) return fetch(e.request);
@@ -28,9 +28,6 @@ self.addEventListener("fetch", e=>{
       }catch(err){ return fetch(e.request); }
     })());
     return;
-  }
-  if(u.pathname.startsWith("/dav/")){
-    return; // 其他 dav 路径直连
   }
   // 曲库每次走网络拿最新，失败回退缓存
   if(u.pathname.endsWith("catalog.js")){
