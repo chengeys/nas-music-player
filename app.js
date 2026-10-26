@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.11 2026-10-26";
+const APP_VER = "v9.12 2026-10-26";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -303,7 +303,7 @@ function prefetchNext(){
   }
 }
 document.addEventListener("visibilitychange",()=>{
-  if(document.visibilityState==="visible") trySwapToBlob(queue[qi]);
+  if(document.visibilityState==="visible"){ try{ pushAuthToSW(); }catch(e){} trySwapToBlob(queue[qi]); }
 });
 function playAt(i, autoplay=true){
 if(i<0||i>=queue.length) return;
