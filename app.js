@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.36 2026-10-28";
+const APP_VER = "v9.37 2026-10-28";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -185,13 +185,7 @@ function applyMeta(song){
 /* 诊断日志（v9.26）：把播放链路的关键事件记到本机，设置页可看、供截图定位 */
 const DIAG_KEY = "zmusic.diag.v1";
 function diag(kind, info){
-  try{
-    const a = JSON.parse(localStorage.getItem(DIAG_KEY) || "[]");
-    a.push(new Date().toTimeString().slice(0,8) + " " + kind + " " + (info || ""));
-    while(a.length > 40) a.shift();
-    localStorage.setItem(DIAG_KEY, JSON.stringify(a));
-    const el = $("diagLog"); if(el) el.textContent = a.join("\n");
-  }catch(e){}
+  // v9.37：按用户指示删除诊断日志——不再记录、不再展示（保留空函数兼容各调用点）。
 }
 if("serviceWorker" in navigator){
   navigator.serviceWorker.addEventListener("message", e=>{
@@ -252,12 +246,30 @@ function lrcCenterIdx(){
   return best;
 }
 function lrcTimedIdx(i){ while(i>=0 && (!curLyrics[i] || curLyrics[i].t<0)) i--; return i; }
+/* v9.37：统一 seek 入口——歌词拖动与进度条都走这里。（教训：v9.35 的 seekClamp 定义在 bind() 的
+   函数作用域内，顶层的 lrcSeekTo 根本调不到、每次歌词拖动都抛 ReferenceError，等于把功能改死。）
+   首段阶段数据只有开头：目标超出首段估算时长时，先钳到首段尾附近（避免元素 seek 到无数据处
+   error 卡死），同时记 _pendingSeek，整曲换源时一步落到目标位。 */
+function prefixHorizon(song){
+  if(!song || !song._prefixTotal || !song._prefixBytes || song._prefixTotal<=song._prefixBytes) return 0;
+  if(!isFinite(audio.duration) || !audio.duration) return 0;
+  return audio.duration * (song._prefixBytes/song._prefixTotal) * 0.92;
+}
+function applySeek(t){
+  const song=queue[qi];
+  if(song && song._onPrefix){
+    const lim=prefixHorizon(song);
+    if(lim>0 && t>lim){ song._pendingSeek=t; try{ audio.currentTime=Math.max(0, lim); }catch(e){} return; }
+  }
+  if(song) song._pendingSeek=null;
+  try{ audio.currentTime=t; }catch(e){}
+}
 function lrcSeekTo(i){
   const idx=lrcTimedIdx(i);
   if(idx<0) return;
   const t=curLyrics[idx].t;
   if(isFinite(t) && Math.abs(audio.currentTime-t)>=1){
-    audio.currentTime=seekClamp(t); // v9.35：歌词跳转同样钳制
+    applySeek(t); // v9.37：走统一 seek 入口
     curLrcIdx=-1; syncLyrics();
   }
 }
@@ -436,6 +448,7 @@ async function prefixUrl(song, extCtl){
       const total=parseInt(((r.headers.get("Content-Range")||"").split("/")[1])||"0", 10);
       const ou=URL.createObjectURL(blob);
       if(r.status===200 || (total>0 && total<=blob.size)){ objCache[song.p]=ou; blobCache[song.p]=blob; return ou; } // 拿到的就是整曲
+      song._prefixTotal=total; song._prefixBytes=blob.size; // v9.37：供 applySeek 估算首段可播时长
       prefixUrls[song.p]=ou;
       return ou;
     }catch(e){
@@ -533,7 +546,7 @@ if(autoplay){
 }
 if(cached){
   // 已有本地整曲（预取/重播）：立即播，零等待
-  audio.src=cached; song._swapped=true;
+  audio.src=cached; song._swapped=true; song._onPrefix=false; song._pendingSeek=null;
   if(autoplay){ audio.play().then(()=>{ loading=false; setPlayStatus(""); hideToast(); prefetchNext(); ensureQueue(); }).catch(()=>{ loading=false; }); }
   else loading=false;
   return;
@@ -547,19 +560,21 @@ curPrefixCtl=new AbortController();
 prefixUrl(song, curPrefixCtl).then(async pu=>{
   if(playSeq!==mySeq || queue[qi]!==song) return; // 已切走
   if(loadingSong===song) loadingSong=null;
-  audio.src=pu;
+  audio.src=pu; song._onPrefix=true; song._pendingSeek=null; // v9.37：进入首段阶段
   if(autoplay){
     try{ await audio.play(); }catch(e){}
     loading=false; setPlayStatus(""); hideToast();
     prefetchNext(); ensureQueue();
   } else loading=false;
-  if(objCache[song.p] && objCache[song.p]===pu){ song._swapped=true; return; } // 首段即整曲（小文件）
+  if(objCache[song.p] && objCache[song.p]===pu){ song._swapped=true; song._onPrefix=false; return; } // 首段即整曲（小文件）
   // 整曲随后接上：下完把首段临时源换成整曲源（同位置、不断播）
   const pgAtReq=pauseGen;
   blobUrl(song).then(ou=>{
     if(queue[qi]!==song || audio.src!==pu) return;
-    const wasPlaying=!audio.paused && !audio.ended && pauseGen===pgAtReq, ct=audio.currentTime||0;
+    const hadPending=(song._pendingSeek!=null); // v9.37：用户在首段阶段拖到过数据之外
+    const wasPlaying=(pauseGen===pgAtReq) && ((!audio.paused && !audio.ended) || (audio.ended && hadPending)), ct=hadPending ? song._pendingSeek : (audio.currentTime||0);
     const stalled=!song._played && (audio.currentTime||0)<0.05; // 首段被 error 卡死、根本没播起来过
+    song._pendingSeek=null; song._onPrefix=false;
     song._swapAt=Date.now(); // 换源时刻（v9.33）：紧随其后的过渡性 error 单独记 SWAPERR
     audio.src=ou; song._swapped=true;
     try{ audio.currentTime=ct; }catch(e){}
@@ -580,7 +595,8 @@ prefixUrl(song, curPrefixCtl).then(async pu=>{
     const ou=await blobUrl(song);
     if(loadingSong===song) loadingSong=null;
     if(playSeq!==mySeq || queue[qi]!==song) return;
-    audio.src=ou; song._swapped=true;
+    audio.src=ou; song._swapped=true; song._onPrefix=false;
+    if(song._pendingSeek!=null){ const pt=song._pendingSeek; song._pendingSeek=null; try{ audio.currentTime=pt; }catch(e){} } // v9.37
     if(autoplay){ try{ await audio.play(); }catch(err){} loading=false; setPlayStatus(""); hideToast(); prefetchNext(); ensureQueue(); }
     else loading=false;
   }catch(e2){
@@ -743,7 +759,13 @@ if(!queue.length) return;
 if(audio.currentTime>3){ audio.currentTime=0; return;}
 playAt((qi-1+queue.length)%queue.length);
 }
-audio.addEventListener("ended",()=>{ const s=queue[qi]; if(s) logPlay(s,true); next(true);});
+audio.addEventListener("ended",()=>{ const s=queue[qi]; if(s) logPlay(s,true);
+  if(s && s._pendingSeek!=null && !s._swapped){
+    // v9.37：进度被拖到首段之后、整曲还没换上——别跳走，等换源落到目标位续播；45 秒没换上再跳歌兜底
+    setTimeout(()=>{ if(queue[qi]===s && s._pendingSeek!=null && !s._swapped) next(true); }, 45000);
+    return;
+  }
+  next(true);});
 /* 播放卡死看门狗：一首歌已开播后，进度超过 10 秒不动（没暂停、没结束）就自救：
    先切到后台下好的本地整首续播；没有本地缓存（或切完还卡）就直接跳下一首。
    专治"卡在最后几秒不结束、也不切歌"——数据流尾巴断了时 ended 永不触发的情况 */
@@ -803,7 +825,7 @@ function preSwitch(){
   if(!useBlob) return; // v9.33：下一首整曲没备好就不提前切——绝不回流式直链兜底，留给 ended→playAt 走首段秒播
   song._preSwitched=true;
   logPlay(song,true);
-  qi=ni; ns._swapped=useBlob;
+  qi=ni; ns._swapped=useBlob; ns._onPrefix=false; ns._pendingSeek=null; // v9.37
   audioPlaying=false;
   audio.src=useBlob?blob:songUrl(ns);
   // 歌词与切歌同时开始加载，不等 play() 成功（此前要等开播后才取歌词）
@@ -1096,21 +1118,11 @@ $("miniPlayer").onclick=()=>{ $("fullPlayer").style.display="flex";
 $("fpDetail").style.display="none"; $("fpQueue").style.display="none"; $("fpLyrics").style.display="block"; $("fpTab").textContent="详情";};
 /* 迷你进度条：点按+拖动跳转 */
 let scrubbing=false;
-/* v9.35：seek 钳制——目标不得超过当前资源的可定位尾（audio.seekable）。首段播放时 duration 报的是
-   整曲时长、数据只有开头 2MB，拖过数据尾元素会 error 并卡在目标位静音（test26 实证），钳到尾前 0.25s。 */
-function seekClamp(t){
-  try{
-    if(audio.seekable && audio.seekable.length){
-      const se=audio.seekable.end(0);
-      if(isFinite(se) && se>0) return Math.min(t, Math.max(0, se-0.25));
-    }
-  }catch(e){}
-  return t;
-}
+/* seek 统一走顶层 applySeek（v9.37；v9.35 的 seekClamp 误定义在本函数作用域内、歌词路径调不到，已删） */
 function scrubTo(clientX){
   const r=$("miniProg").getBoundingClientRect();
   const ratio=Math.min(1,Math.max(0,(clientX-r.left)/r.width));
-  if(audio.duration) audio.currentTime=seekClamp(ratio*audio.duration);
+  if(audio.duration) applySeek(ratio*audio.duration);
 }
 $("miniProg").addEventListener("pointerdown",e=>{
   scrubbing=true;
@@ -1122,7 +1134,7 @@ $("miniProg").addEventListener("pointerup",()=>{ scrubbing=false; });
 $("miniProg").addEventListener("pointercancel",()=>{ scrubbing=false; });
 $("closePlayer").onclick=()=>{ $("fullPlayer").style.display="none";};
 $("fpToggle").onclick=togglePlay; $("fpNext").onclick=()=>next(); $("fpPrev").onclick=prev;
-$("seek").addEventListener("input",()=>{ if(audio.duration) audio.currentTime=seekClamp($("seek").value/1000*audio.duration);});
+$("seek").addEventListener("input",()=>{ if(audio.duration) applySeek($("seek").value/1000*audio.duration);});
 $("fpTab").onclick=()=>{
   const showDetail=$("fpDetail").style.display==="none";
   if(showDetail){ const s=queue[qi]; if(s) renderDetail(s); } // 进详情时重渲染，确保封面图已就位（v9.15）
@@ -1172,7 +1184,7 @@ $("forceUpdate").onclick=async ()=>{
   location.replace(location.pathname + "?u=" + Date.now()); // 破 4 小时 HTTP 缓存：换 URL 取新版首页
 };
 $("appVer").textContent=APP_VER;
-try{ const a=JSON.parse(localStorage.getItem(DIAG_KEY)||"[]"); if(a.length && $("diagLog")) $("diagLog").textContent=a.join("\n"); }catch(e){}
+try{ localStorage.removeItem(DIAG_KEY); }catch(e){} // v9.37：清掉旧诊断日志存档
 }
 
 /* ---------- 启动 ---------- */
