@@ -142,10 +142,13 @@ label input{display:block;width:100%;margin-top:6px;background:var(--bg2);
 #fpCover{font-size:110px;margin:10px 0;filter:drop-shadow(0 8px 24px rgba(124,92,255,.35));}
 #fpTitle{font-size:22px;font-weight:700;text-align:center;}
 #fpArtist{color:var(--acc2);font-size:15px;}
-/* 播放页（QQ音乐风） */
+/* 播放页（v9.39 浅色唱片风：按用户给的参考视频改版——白卡唱机+旋转白唱片+唱针臂+浅色底） */
 #fullPlayer{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;
-  background:linear-gradient(180deg,#1a1a22,#101014);overflow:hidden;}
-#fpBg{position:absolute;inset:0;z-index:0;opacity:.35;filter:blur(60px) saturate(1.4);
+  --fg:#1d1d1f;--muted:#8a8a8e;--acc:#31c27c;
+  color:var(--fg);
+  background:linear-gradient(180deg,#fdfdfb 0%,#f4f3ef 55%,#f9e9db 100%);
+  overflow:hidden;padding:0;gap:0;align-items:stretch;justify-content:flex-start;}
+#fpBg{position:absolute;inset:0;z-index:0;opacity:.20;filter:blur(70px) saturate(1.5) brightness(1.3);
   background-size:cover;background-position:center;pointer-events:none;
   transition:background-image .5s;}
 #fullPlayer>*{position:relative;z-index:1;}
@@ -155,49 +158,86 @@ label input{display:block;width:100%;margin-top:6px;background:var(--bg2);
 .fp-titles{flex:1;text-align:center;min-width:0;}
 .fp-titles #fpTitle{font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .fp-titles #fpArtist{font-size:13px;color:var(--muted);margin-top:3px;}
-#fpTab{font-size:13px!important;border:1px solid #3d3d52!important;border-radius:16px!important;
-  padding:6px 14px!important;}
-/* 播放页不再显示封面大图（v9.14 用户要求）：整页给歌词，照片只在详情页显示 */
-.fp-cover-wrap{display:none;}
+#fullPlayer[data-view="disc"] .fp-titles{visibility:hidden;}
+#fpTab{font-size:13px!important;border:1px solid rgba(0,0,0,.16)!important;border-radius:16px!important;
+  padding:6px 14px!important;background:rgba(255,255,255,.65);}
+/* 唱片卡：白色圆角卡 + 旋转白唱片（封面作中心标）+ 唱针臂 */
+.fp-cover-wrap{display:none;position:relative;width:min(86vw,350px);aspect-ratio:1/1;
+  margin:8px auto 4px;background:#fff;border-radius:30px;flex:none;
+  box-shadow:0 24px 60px rgba(80,60,40,.16),0 4px 16px rgba(80,60,40,.07);
+  align-items:center;justify-content:center;cursor:pointer;}
+.fp-disc{position:relative;width:79%;aspect-ratio:1/1;border-radius:50%;
+  background:radial-gradient(circle,#fdfdfd 0 57%,#f0f0f2 58% 100%);
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.05),inset 0 2px 12px rgba(0,0,0,.07),0 12px 32px rgba(0,0,0,.13);
+  animation:fpSpin 16s linear infinite;animation-play-state:paused;}
+.fp-disc::before{content:"";position:absolute;inset:0;border-radius:50%;
+  background:repeating-radial-gradient(circle,rgba(0,0,0,.05) 0 1px,transparent 1px 5px);}
+.fp-disc::after{content:"";position:absolute;inset:0;border-radius:50%;
+  background:conic-gradient(from 215deg,transparent 0 42%,rgba(255,255,255,.55) 50%,transparent 58% 100%);}
+#fullPlayer.is-playing .fp-disc{animation-play-state:running;}
+@keyframes fpSpin{to{transform:rotate(360deg);}}
+#fpCoverImg{position:absolute;left:21%;top:21%;width:58%;height:58%;border-radius:50%;
+  object-fit:cover;box-shadow:0 0 0 1px rgba(0,0,0,.07);z-index:1;}
+#fpCoverPh{position:absolute;left:21%;top:21%;width:58%;height:58%;border-radius:50%;
+  background:linear-gradient(135deg,#eeeef1,#dbdbe1);font-size:52px;color:#b7b9c0;
+  display:flex;align-items:center;justify-content:center;z-index:1;}
+.fp-disc-hole{position:absolute;left:50%;top:50%;width:11%;aspect-ratio:1/1;transform:translate(-50%,-50%);
+  border-radius:50%;background:#fff;box-shadow:inset 0 1px 4px rgba(0,0,0,.25),0 0 0 1px rgba(0,0,0,.06);z-index:2;}
+.fp-disc-hole::after{content:"";position:absolute;left:50%;top:50%;width:34%;aspect-ratio:1/1;
+  transform:translate(-50%,-50%);border-radius:50%;background:#c9ccd2;}
+.fp-arm{position:absolute;top:-4%;right:-2%;height:92%;z-index:3;pointer-events:none;
+  filter:drop-shadow(0 6px 8px rgba(0,0,0,.18));}
+.fp-arm-g{transform-box:view-box;transform-origin:99px 26px;transform:rotate(13deg);transition:transform .8s cubic-bezier(.4,0,.2,1);}
+#fullPlayer.is-playing .fp-arm-g{transform:rotate(-14deg);}
+/* 唱片视图的大标题与当前歌词行 */
+#fpDiscMeta{display:none;width:100%;box-sizing:border-box;padding:8px 24px 0;}
+#fullPlayer[data-view="disc"] #fpDiscMeta{display:block;}
+#fpBigTitle{font-size:26px;font-weight:800;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#fpBigArtist{font-size:14px;color:var(--muted);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#fpCurLine{font-size:14px;color:#55555c;margin-top:12px;min-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .fp-detail-cover{display:block;width:190px;height:190px;object-fit:cover;border-radius:14px;margin:10px auto 16px;}
-#fpCoverImg{width:240px;height:240px;object-fit:cover;border-radius:20px;
-  box-shadow:0 16px 48px rgba(0,0,0,.6);}
-#fpCoverPh{width:240px;height:240px;border-radius:20px;background:var(--bg3);
-  font-size:100px;display:flex;align-items:center;justify-content:center;}
 .fp-actions{display:flex;justify-content:center;gap:44px;margin:6px 0;}
-.fp-actions button{background:none;border:none;color:var(--muted);font-size:24px;padding:6px;}
+.fp-actions button{background:none;border:none;color:#6d6d72;font-size:24px;padding:6px;}
 .fp-actions button.liked{color:#ff5c7a;}
-#fpLyrics{flex:1;overflow-y:auto;margin:4px 0;min-height:100px;
-  -webkit-overflow-scrolling:touch;text-align:center;
+#fpLyrics{flex:1;overflow-y:auto;margin:4px 0;min-height:100px;width:100%;box-sizing:border-box;
+  -webkit-overflow-scrolling:touch;text-align:left;padding:0 10px;
   -webkit-mask-image:linear-gradient(transparent,#000 15%,#000 85%,transparent);
   mask-image:linear-gradient(transparent,#000 15%,#000 85%,transparent);}
-.lrc-line{padding:6px 12px;font-size:15px;color:#7a7a8a;line-height:1.6;transition:all .3s;cursor:pointer;}
+.lrc-line{padding:6px 12px;font-size:15px;color:#9a9aa0;line-height:1.6;transition:all .3s;cursor:pointer;}
 #lrcSeekChip{position:absolute;right:14px;top:50%;transform:translateY(-50%);z-index:5;
-  background:rgba(49,194,124,.92);color:#fff;font-size:13px;font-weight:700;
-  padding:7px 12px;border-radius:16px;box-shadow:0 4px 16px rgba(0,0,0,.4);cursor:pointer;}
-.lrc-line.active{color:#fff;font-size:18px;font-weight:700;}
-.lrc-line.passed{color:#4a4a5a;}
-#fpDetail{flex:1;overflow-y:auto;margin:6px 16px;font-size:14px;line-height:2.2;color:var(--muted);}
+  background:rgba(49,194,124,.95);color:#fff;font-size:13px;font-weight:700;
+  padding:7px 12px;border-radius:16px;box-shadow:0 4px 16px rgba(0,0,0,.25);cursor:pointer;}
+.lrc-line.active{color:var(--acc);font-size:18px;font-weight:800;}
+.lrc-line.passed{color:#c6c6cc;}
+#fpDetail{flex:1;overflow-y:auto;margin:6px 16px;font-size:14px;line-height:2.2;color:var(--muted);width:100%;box-sizing:border-box;}
 #fpQueue{flex:1;overflow-y:auto;margin:4px 0;min-height:100px;width:100%;-webkit-overflow-scrolling:touch;}
-.fp-queue-head{display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-weight:700;}
+.fp-queue-head{display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-weight:700;color:var(--fg);}
 #fpQueueList .song.cur{background:rgba(49,194,124,.15);}
 #fpQueueList .song.cur .tt b{color:var(--acc);}
 #fpDetail b{color:var(--fg);}
-.fp-progress{display:flex;align-items:center;gap:10px;padding:0 20px;}
+.fp-progress{display:flex;align-items:center;gap:10px;padding:0 20px;margin-top:auto;}
 .fp-progress span{font-size:11px;color:var(--muted);min-width:36px;}
 .fp-progress span:last-child{text-align:right;}
-#seek{flex:1;accent-color:var(--acc);height:28px;}
+#seek{flex:1;height:28px;-webkit-appearance:none;appearance:none;background:transparent;cursor:pointer;}
+#seek::-webkit-slider-runnable-track{height:2px;background:rgba(0,0,0,.22);border-radius:2px;}
+#seek::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:13px;height:13px;border-radius:50%;background:#111;margin-top:-5.5px;box-shadow:0 1px 5px rgba(0,0,0,.35);}
+#seek::-moz-range-track{height:2px;background:rgba(0,0,0,.22);border-radius:2px;}
+#seek::-moz-range-thumb{width:13px;height:13px;border:none;border-radius:50%;background:#111;box-shadow:0 1px 5px rgba(0,0,0,.35);}
 #fpControls{display:flex;align-items:center;justify-content:center;gap:16px;
   margin:8px 0 4px;}
 #fpControls button{background:none;border:none;color:var(--fg);font-size:24px;
   width:50px;height:50px;border-radius:50%;}
-#fpControls button:active{background:rgba(255,255,255,.08);}
-#fpControls .big{font-size:30px;width:70px;height:70px;background:var(--acc);color:#fff;
-  box-shadow:0 6px 20px rgba(49,194,124,.4);}
+#fpControls button:active{background:rgba(0,0,0,.06);}
+#fpControls .big{font-size:27px;width:66px;height:66px;background:#111;color:#fff;
+  box-shadow:0 10px 26px rgba(0,0,0,.28);}
 #fpMode{font-size:22px!important;color:var(--fg)!important;}
 #fpList{font-size:24px!important;color:var(--fg)!important;position:relative;}
 #fpList::after{content:"列表";position:absolute;left:0;right:0;bottom:1px;font-size:9px;color:var(--muted);letter-spacing:2px;}
-#playStatus{text-align:center;min-height:20px;padding:0 20px 8px;}
+#playStatus{text-align:center;min-height:20px;padding:0 20px 8px;color:var(--muted);}
+@media (max-height:740px){
+  .fp-cover-wrap{width:min(66vw,290px);}
+  #fpBigTitle{font-size:23px;}
+}
 
 /* 底部导航 */
 #tabbar{position:fixed;left:0;right:0;bottom:0;z-index:40;max-width:640px;margin:0 auto;

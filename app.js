@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.38 2026-10-28";
+const APP_VER = "v9.39 2026-10-28";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -178,6 +178,8 @@ function applyMeta(song){
     curLyrics=m.lyrics||[]; renderLyrics();
     curCoverUrl=m.coverUrl||"";
     if(curCoverUrl){ $("miniCover").src=curCoverUrl; $("miniCover").classList.remove("hide"); }
+    const ci=$("fpCoverImg"), cp=$("fpCoverPh"); // v9.39：唱片中心标
+    if(ci){ if(curCoverUrl){ ci.src=curCoverUrl; ci.style.display="block"; if(cp) cp.style.display="none"; } else { ci.style.display="none"; if(cp) cp.style.display="flex"; } }
     if($("fpDetail").style.display!=="none") renderDetail(song);
     updateLikeBtn(song);
   }).catch(()=>{});
@@ -204,6 +206,7 @@ function pushAuthToSW(){
 }
 function renderLyrics(){
   const el=$("fpLyrics"); el.innerHTML=""; curLrcIdx=-1;
+  const cl0=$("fpCurLine"); if(cl0) cl0.textContent=""; // v9.39
   if(!curLyrics.length){
     el.innerHTML='<div class="lrc-line">'+(lyricsLoading?"歌词加载中…":"这首歌没有内嵌歌词")+'</div>'; return;
   }
@@ -225,6 +228,7 @@ function syncLyrics(){
   const el=$("fpLyrics"), ch=el.children;
   if(curLrcIdx>=0&&ch[curLrcIdx]) ch[curLrcIdx].className="lrc-line passed";
   curLrcIdx=idx;
+  const cl=$("fpCurLine"); if(cl) cl.textContent=(curLyrics[idx]&&curLyrics[idx].txt)||""; // v9.39 唱片视图当前行
   if(ch[idx]){
     ch[idx].className="lrc-line active";
     if(Date.now()>=lrcHoldUntil) ch[idx].scrollIntoView({block:"center",behavior:"smooth"});
@@ -1073,10 +1077,20 @@ function renderQueue(){
   const cur=el.children[qi];
   if(cur) cur.scrollIntoView({block:"center"});
 }
+/* v9.39 播放页视图机：disc（唱片）/lyrics（歌词）/detail（详情）/queue（列表），data-view 驱动浅色主题细节 */
+function fpSetView(v){
+  const fp=$("fullPlayer"); if(fp) fp.dataset.view=v;
+  const cw=$("fpCoverWrap"); if(cw) cw.style.display=(v==="disc")?"flex":"none";
+  $("fpLyrics").style.display=(v==="lyrics")?"block":"none";
+  $("fpDetail").style.display=(v==="detail")?"block":"none";
+  $("fpQueue").style.display=(v==="queue")?"block":"none";
+  $("fpTab").textContent=(v==="disc")?"歌词":(v==="detail")?"唱片":"详情";
+}
 function showQueuePanel(show){
   $("fpQueue").style.display=show?"block":"none";
   $("fpLyrics").style.display=show?"none":"block";
   if(show){ $("fpDetail").style.display="none"; $("fpTab").textContent="详情"; renderQueue(); }
+  fpSetView(show?"queue":"lyrics");
 }
 function renderPlayer(){
 const s=queue[qi]; if(!s) return;
@@ -1086,12 +1100,14 @@ $("miniTitle").textContent=dispTitle(s);
 $("miniArtist").textContent=dispArtist(s);
 $("fpTitle").textContent=dispTitle(s);
 $("fpArtist").textContent=dispArtist(s);
+if($("fpBigTitle")){ $("fpBigTitle").textContent=dispTitle(s); $("fpBigArtist").textContent=dispArtist(s); } // v9.39 唱片视图大标题
 renderDetail(s);
 syncPlayBtns();
 }
 function syncPlayBtns(){
 const ic=audio.paused?"▶":"⏸";
 $("miniToggle").textContent=ic; $("fpToggle").textContent=ic;
+const fp=$("fullPlayer"); if(fp) fp.classList.toggle("is-playing", !audio.paused); // v9.39 唱片旋转/唱针臂
 }
 function setPlayStatus(t){ $("playStatus").textContent=t||"";}
 function showView(id){
@@ -1134,8 +1150,7 @@ $("runBtn").onclick=startRunRadio;
 $("miniToggle").onclick=e=>{e.stopPropagation();togglePlay();};
 $("miniNext").onclick=e=>{e.stopPropagation();next();};
 $("miniPrev").onclick=e=>{e.stopPropagation();prev();};
-$("miniPlayer").onclick=()=>{ $("fullPlayer").style.display="flex";
-$("fpDetail").style.display="none"; $("fpQueue").style.display="none"; $("fpLyrics").style.display="block"; $("fpTab").textContent="详情";};
+$("miniPlayer").onclick=()=>{ $("fullPlayer").style.display="flex"; fpSetView("disc"); };
 /* 迷你进度条：点按+拖动跳转 */
 let scrubbing=false;
 /* seek 统一走顶层 applySeek（v9.37；v9.35 的 seekClamp 误定义在本函数作用域内、歌词路径调不到，已删） */
@@ -1156,12 +1171,10 @@ $("closePlayer").onclick=()=>{ $("fullPlayer").style.display="none";};
 $("fpToggle").onclick=togglePlay; $("fpNext").onclick=()=>next(); $("fpPrev").onclick=prev;
 $("seek").addEventListener("input",()=>{ if(audio.duration) applySeek($("seek").value/1000*audio.duration);});
 $("fpTab").onclick=()=>{
-  const showDetail=$("fpDetail").style.display==="none";
-  if(showDetail){ const s=queue[qi]; if(s) renderDetail(s); } // 进详情时重渲染，确保封面图已就位（v9.15）
-  $("fpQueue").style.display="none";
-  $("fpDetail").style.display=showDetail?"block":"none";
-  $("fpLyrics").style.display=showDetail?"none":"block";
-  $("fpTab").textContent=showDetail?"歌词":"详情";
+  const v=($("fullPlayer").dataset.view)||"lyrics";
+  if(v==="disc") fpSetView("lyrics");
+  else if(v==="lyrics"){ const s=queue[qi]; if(s) renderDetail(s); fpSetView("detail"); } // 进详情时重渲染（v9.15）
+  else fpSetView("disc");
 };
 /* 播放页 QQ风按钮 */
 $("fpLike").onclick=()=>{
@@ -1170,7 +1183,8 @@ $("fpLike").onclick=()=>{
   else { fav[song.p]=Date.now(); toast("已加入我喜欢 ❤"); }
   saveFav(); updateLikeBtn(song);
 };
-$("fpDl").onclick=()=>$("fpTab").onclick();
+$("fpDl").onclick=()=>{ const s=queue[qi]; if(s) renderDetail(s); fpSetView("detail"); };
+$("fpCoverWrap").onclick=()=>fpSetView("lyrics"); // v9.39：点唱片卡看歌词（同参考视频）
 $("fpShare").onclick=()=>{
   const song=queue[qi]; if(!song) return;
   const txt=`${dispTitle(song)} - ${dispArtist(song)}`;
