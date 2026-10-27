@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.29 2026-10-27";
+const APP_VER = "v9.30 2026-10-27";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -417,6 +417,8 @@ throw lastErr||{code:0,msg:"重试后仍失败"};
 /* 双保险播放：先流式秒播，后台下载完整文件后无缝切换（保锁屏） */
 let fbRetry=false;
 let playSeq=0; // 播放代次（v9.28）：切歌后让上一首的异步加载自动作废
+let loadingSong=null; // 正在整曲加载的歌（v9.30）：同歌重复点、加载中按钮语义都看它
+let loadCancelled=null; // 被用户在加载中取消的歌（v9.30）：再按播放键应重新加载它，而不是续播旧歌
 /* 连播容错：连续加载失败计数 + 卡住看门狗计时器 */
 let failStreak=0;
 let stallTimer=null;
@@ -471,6 +473,8 @@ document.addEventListener("visibilitychange",()=>{
 function playAt(i, autoplay=true){
 if(i<0||i>=queue.length) return;
 qi=i; const song=queue[qi]; fbRetry=false;
+if(loadingSong===song) return; // 这首正在加载中，重复点不重启（v9.30）
+if(loadCancelled!==song) loadCancelled=null;
 diag("PLAY", song.t + " / " + (song.a || ""));
 song._swapped=false; song._preSwitched=false; song._played=false;
 stallActs=0; lastProgAt=Date.now(); lastProgTime=0;
@@ -502,7 +506,10 @@ if(cached){
 }
 /* v9.28 主路改整曲优先：先把整曲下完再播。这条通道上流式频繁被饿死（abort/code=4），
    整曲走 fetch 有重试、能等，播起来后零网络依赖；代价是第一首多等几秒，连播靠预取基本无感。 */
+audio.pause(); // v9.30：新歌还在下载时先停掉旧歌——不能再出现"标题是新歌、响的还是旧歌、按钮管不住"
+loadingSong=song;
 blobUrl(song).then(async ou=>{
+  if(loadingSong===song) loadingSong=null;
   if(playSeq!==mySeq || queue[qi]!==song) return; // 已切走：下好的留缓存即可
   audio.src=ou; song._swapped=true;
   if(autoplay){
@@ -511,6 +518,7 @@ blobUrl(song).then(async ou=>{
     prefetchNext(); ensureQueue();
   } else loading=false;
 }).catch(e=>{
+  if(loadingSong===song) loadingSong=null;
   if(e && e.superseded) return; // 已被更新的点播取代，静默作废
   if(playSeq!==mySeq || queue[qi]!==song) return;
   handleSongFailed(song, e);
@@ -566,6 +574,12 @@ async function playFallback(song, origErr){
   }
 }
 function togglePlay(){
+if(loadingSong){ // 正在整曲加载（v9.30）：按钮取消加载意图，再点一次重新加载这首
+  loadCancelled=loadingSong; loadingSong=null; playSeq++; loading=false;
+  audio.pause(); setPlayStatus(""); renderPlayer();
+  return;
+}
+if(loadCancelled && loadCancelled===queue[qi]){ loadCancelled=null; return playAt(qi); }
 if(!audio.src && queue.length) return playAt(0);
 if(audio.paused) audio.play(); else audio.pause();
 }
