@@ -1,7 +1,7 @@
 /* 知行音乐 Service Worker v1 */
-const CACHE = "zmusic-v60";
+const CACHE = "zmusic-v61";
 // 注意：catalog.js 不预缓存（走网络优先），避免大文件导致安装失败
-const SHELL = ["./","./index.html","./style.css?v=9.34","./app.js?v=9.34","./cloud.js?v=9.34","./manifest.json","./icon.svg"];
+const SHELL = ["./","./index.html","./style.css?v=9.35","./app.js?v=9.35","./cloud.js?v=9.35","./manifest.json","./icon.svg"];
 
 // NAS 认证头（由页面 postMessage 传入）
 // v9.12 起同步持久化到 IndexedDB：SW 内存变量在 SW 被系统回收重启后会清零

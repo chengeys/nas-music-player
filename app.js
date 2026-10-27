@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.34 2026-10-28";
+const APP_VER = "v9.35 2026-10-28";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -257,7 +257,7 @@ function lrcSeekTo(i){
   if(idx<0) return;
   const t=curLyrics[idx].t;
   if(isFinite(t) && Math.abs(audio.currentTime-t)>=1){
-    audio.currentTime=t;
+    audio.currentTime=seekClamp(t); // v9.35：歌词跳转同样钳制
     curLrcIdx=-1; syncLyrics();
   }
 }
@@ -353,6 +353,7 @@ const blobInflight={};
 /* 下载闸（v9.29 改优先级抢占）：任何时刻只下一首整曲；新点播到达时——
    排队中的旧任务直接作废，正在下的若不是这首歌立刻中止让路。
    （v9.28 的纯串行队列会让连点下一首时每首排队挨个下，新点的歌半天轮不上、还在放原来的——用户实测。） */
+let pauseGen=0; // v9.35：pause 事件代次（阶段二换源的防抢播守卫）
 let dlRunning=null, dlQueued=null;
 function dlGate(song){
   return new Promise((resolve, reject)=>{
@@ -458,6 +459,7 @@ let stallTimer=null;
 let lastProgAt=Date.now(), lastProgTime=0, stallActs=0;
 /* 跟踪是否真正在播放（playing 事件），避免切源时撞车 */
 let audioPlaying=false;
+audio.addEventListener("pause",()=>{ pauseGen++; }); // v9.35
 audio.addEventListener("playing",()=>{
   audioPlaying=true;
   const cs=queue[qi]; if(cs) cs._played=true;
@@ -553,9 +555,10 @@ prefixUrl(song, curPrefixCtl).then(async pu=>{
   } else loading=false;
   if(objCache[song.p] && objCache[song.p]===pu){ song._swapped=true; return; } // 首段即整曲（小文件）
   // 整曲随后接上：下完把首段临时源换成整曲源（同位置、不断播）
+  const pgAtReq=pauseGen;
   blobUrl(song).then(ou=>{
     if(queue[qi]!==song || audio.src!==pu) return;
-    const wasPlaying=!audio.paused && !audio.ended, ct=audio.currentTime||0;
+    const wasPlaying=!audio.paused && !audio.ended && pauseGen===pgAtReq, ct=audio.currentTime||0;
     const stalled=!song._played && (audio.currentTime||0)<0.05; // 首段被 error 卡死、根本没播起来过
     song._swapAt=Date.now(); // 换源时刻（v9.33）：紧随其后的过渡性 error 单独记 SWAPERR
     audio.src=ou; song._swapped=true;
@@ -1086,10 +1089,21 @@ $("miniPlayer").onclick=()=>{ $("fullPlayer").style.display="flex";
 $("fpDetail").style.display="none"; $("fpQueue").style.display="none"; $("fpLyrics").style.display="block"; $("fpTab").textContent="详情";};
 /* 迷你进度条：点按+拖动跳转 */
 let scrubbing=false;
+/* v9.35：seek 钳制——目标不得超过当前资源的可定位尾（audio.seekable）。首段播放时 duration 报的是
+   整曲时长、数据只有开头 2MB，拖过数据尾元素会 error 并卡在目标位静音（test26 实证），钳到尾前 0.25s。 */
+function seekClamp(t){
+  try{
+    if(audio.seekable && audio.seekable.length){
+      const se=audio.seekable.end(0);
+      if(isFinite(se) && se>0) return Math.min(t, Math.max(0, se-0.25));
+    }
+  }catch(e){}
+  return t;
+}
 function scrubTo(clientX){
   const r=$("miniProg").getBoundingClientRect();
   const ratio=Math.min(1,Math.max(0,(clientX-r.left)/r.width));
-  if(audio.duration) audio.currentTime=ratio*audio.duration;
+  if(audio.duration) audio.currentTime=seekClamp(ratio*audio.duration);
 }
 $("miniProg").addEventListener("pointerdown",e=>{
   scrubbing=true;
@@ -1101,7 +1115,7 @@ $("miniProg").addEventListener("pointerup",()=>{ scrubbing=false; });
 $("miniProg").addEventListener("pointercancel",()=>{ scrubbing=false; });
 $("closePlayer").onclick=()=>{ $("fullPlayer").style.display="none";};
 $("fpToggle").onclick=togglePlay; $("fpNext").onclick=()=>next(); $("fpPrev").onclick=prev;
-$("seek").addEventListener("input",()=>{ if(audio.duration) audio.currentTime=$("seek").value/1000*audio.duration;});
+$("seek").addEventListener("input",()=>{ if(audio.duration) audio.currentTime=seekClamp($("seek").value/1000*audio.duration);});
 $("fpTab").onclick=()=>{
   const showDetail=$("fpDetail").style.display==="none";
   if(showDetail){ const s=queue[qi]; if(s) renderDetail(s); } // 进详情时重渲染，确保封面图已就位（v9.15）
