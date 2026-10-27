@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.37 2026-10-28";
+const APP_VER = "v9.38 2026-10-28";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -253,7 +253,10 @@ function lrcTimedIdx(i){ while(i>=0 && (!curLyrics[i] || curLyrics[i].t<0)) i--;
 function prefixHorizon(song){
   if(!song || !song._prefixTotal || !song._prefixBytes || song._prefixTotal<=song._prefixBytes) return 0;
   if(!isFinite(audio.duration) || !audio.duration) return 0;
-  return audio.duration * (song._prefixBytes/song._prefixTotal) * 0.92;
+  const start=song._prefixAudioStart||0; // v9.38：封面/元数据不算音频字节
+  const audioBytes=song._prefixBytes-start, totalAudio=song._prefixTotal-start;
+  if(audioBytes<=0 || totalAudio<=audioBytes) return 0;
+  return audio.duration * (audioBytes/totalAudio) * 0.92;
 }
 function applySeek(t){
   const song=queue[qi];
@@ -449,6 +452,23 @@ async function prefixUrl(song, extCtl){
       const ou=URL.createObjectURL(blob);
       if(r.status===200 || (total>0 && total<=blob.size)){ objCache[song.p]=ou; blobCache[song.p]=blob; return ou; } // 拿到的就是整曲
       song._prefixTotal=total; song._prefixBytes=blob.size; // v9.37：供 applySeek 估算首段可播时长
+      // v9.38：音频数据起点——ID3 封面图常占几百 KB，不排除会把可播时长高估、钳位 seek 仍越界报错（test29 实证）
+      try{
+        const h=new Uint8Array(await blob.slice(0,4).arrayBuffer());
+        if(h[0]===0x49&&h[1]===0x44&&h[2]===0x33){ // "ID3"
+          const b=new Uint8Array(await blob.slice(6,10).arrayBuffer());
+          song._prefixAudioStart=10+(((b[0]&0x7f)<<21)|((b[1]&0x7f)<<14)|((b[2]&0x7f)<<7)|(b[3]&0x7f));
+        } else if(h[0]===0x66&&h[1]===0x4c&&h[2]===0x61&&h[3]===0x43){ // "fLaC"
+          let off=4;
+          for(let n=0;n<16;n++){
+            const bh=new Uint8Array(await blob.slice(off,off+4).arrayBuffer());
+            if(bh.length<4) break;
+            const last=(bh[0]&0x80)!==0, len=((bh[1]<<16)|(bh[2]<<8)|bh[3]);
+            off+=4+len; if(last) break;
+          }
+          song._prefixAudioStart=off;
+        }
+      }catch(e){}
       prefixUrls[song.p]=ou;
       return ou;
     }catch(e){
