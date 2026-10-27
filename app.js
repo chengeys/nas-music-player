@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.39 2026-10-28";
+const APP_VER = "v9.40 2026-10-28";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -373,6 +373,7 @@ const blobInflight={};
    排队中的旧任务直接作废，正在下的若不是这首歌立刻中止让路。
    （v9.28 的纯串行队列会让连点下一首时每首排队挨个下，新点的歌半天轮不上、还在放原来的——用户实测。） */
 let pauseGen=0; // v9.35：pause 事件代次（阶段二换源的防抢播守卫）
+let playGen=0; // v9.40：play 事件代次（用户在换源后主动恢复播放时，压暂停要让路）
 let dlRunning=null, dlQueued=null;
 function dlGate(song){
   return new Promise((resolve, reject)=>{
@@ -497,6 +498,7 @@ let lastProgAt=Date.now(), lastProgTime=0, stallActs=0;
 /* 跟踪是否真正在播放（playing 事件），避免切源时撞车 */
 let audioPlaying=false;
 audio.addEventListener("pause",()=>{ pauseGen++; }); // v9.35
+audio.addEventListener("play",()=>{ playGen++; }); // v9.40
 audio.addEventListener("playing",()=>{
   audioPlaying=true;
   const cs=queue[qi]; if(cs) cs._played=true;
@@ -592,7 +594,7 @@ prefixUrl(song, curPrefixCtl).then(async pu=>{
   } else loading=false;
   if(objCache[song.p] && objCache[song.p]===pu){ song._swapped=true; song._onPrefix=false; return; } // 首段即整曲（小文件）
   // 整曲随后接上：下完把首段临时源换成整曲源（同位置、不断播）
-  const pgAtReq=pauseGen;
+  const pgAtReq=pauseGen, plAtReq=playGen;
   blobUrl(song).then(ou=>{
     if(queue[qi]!==song || audio.src!==pu) return;
     const hadPending=(song._pendingSeek!=null); // v9.37：用户在首段阶段拖到过数据之外
@@ -606,7 +608,7 @@ prefixUrl(song, curPrefixCtl).then(async pu=>{
     else if(pauseGen>pgAtReq){
       // v9.36：用户在下载等待期按过暂停——元素若处于错误/待定位状态，换源后浏览器会自行恢复播放
       // （test27 实证：全程无任何 play() 调用却自己响了）。在 canplay 后与 800ms 兜底各补一记 pause 压住。
-      const stomp=()=>{ if(queue[qi]===song && !audio.paused && pauseGen>pgAtReq) audio.pause(); };
+      const stomp=()=>{ if(queue[qi]===song && !audio.paused && pauseGen>pgAtReq && playGen===plAtReq) audio.pause(); }; // v9.40：用户已主动恢复播放（play 代次变了）就不许压
       audio.addEventListener("canplay", function h(){ audio.removeEventListener("canplay",h); setTimeout(stomp,50); });
       setTimeout(stomp, 800);
     }
@@ -1193,7 +1195,7 @@ $("fpShare").onclick=()=>{
 };
 $("fpMode").onclick=()=>{
   repeatOne=!repeatOne;
-  $("fpMode").textContent=repeatOne?"🔂":"🔁";
+  $("fpMode").textContent=repeatOne?"↺¹":"↺"; // v9.40：单色字形（原 emoji 在浅色下是彩色块）
   toast(repeatOne?"单曲循环":"列表循环","",1500);
 };
 $("fpList").onclick=()=>{
