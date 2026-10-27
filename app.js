@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.30 2026-10-27";
+const APP_VER = "v9.31 2026-10-27";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -413,6 +413,38 @@ throw e;
 }
 throw lastErr||{code:0,msg:"重试后仍失败"};
 }
+/* 首段秒播（v9.31）：先取开头 2MB 立刻开播，整曲随后同位置换上。
+   2MB 约值 128k 码率 2 分钟 / 320k 约 50 秒，一般够等整曲下完。 */
+const PREFIX_BYTES=2097152;
+const prefixUrls={};
+let curPrefixCtl=null;
+async function prefixUrl(song, extCtl){
+  if(objCache[song.p]) return objCache[song.p];
+  if(prefixUrls[song.p]) return prefixUrls[song.p];
+  const url=songUrl(song);
+  let lastErr=null;
+  for(let attempt=0; attempt<2; attempt++){
+    if(extCtl && extCtl.signal.aborted) throw {code:0, msg:"已取消", superseded:true};
+    const ctl=new AbortController(); const dlT=setTimeout(()=>ctl.abort(), 20000);
+    const onExt=()=>ctl.abort(); if(extCtl) extCtl.signal.addEventListener("abort", onExt, {once:true});
+    try{
+      const r=await fetch(url, {headers: Object.assign(davHeaders(), {Range:"bytes=0-"+(PREFIX_BYTES-1)}), signal: ctl.signal});
+      if(r.status===401) throw {code:401, msg:"账号或密码不对（401），去设置页检查"};
+      if(!r.ok && r.status!==206) throw {code:r.status, msg:"NAS 返回 "+r.status};
+      const blob=await r.blob();
+      const total=parseInt(((r.headers.get("Content-Range")||"").split("/")[1])||"0", 10);
+      const ou=URL.createObjectURL(blob);
+      if(r.status===200 || (total>0 && total<=blob.size)){ objCache[song.p]=ou; blobCache[song.p]=blob; return ou; } // 拿到的就是整曲
+      prefixUrls[song.p]=ou;
+      return ou;
+    }catch(e){
+      if(e && e.code===401) throw e;
+      if(extCtl && extCtl.signal.aborted) throw {code:0, msg:"已取消", superseded:true};
+      lastErr=e; await new Promise(r2=>setTimeout(r2, 800));
+    }finally{ clearTimeout(dlT); if(extCtl) extCtl.signal.removeEventListener("abort", onExt); }
+  }
+  throw lastErr||{code:0, msg:"首段加载失败"};
+}
 
 /* 双保险播放：先流式秒播，后台下载完整文件后无缝切换（保锁屏） */
 let fbRetry=false;
@@ -504,24 +536,47 @@ if(cached){
   else loading=false;
   return;
 }
-/* v9.28 主路改整曲优先：先把整曲下完再播。这条通道上流式频繁被饿死（abort/code=4），
-   整曲走 fetch 有重试、能等，播起来后零网络依赖；代价是第一首多等几秒，连播靠预取基本无感。 */
-audio.pause(); // v9.30：新歌还在下载时先停掉旧歌——不能再出现"标题是新歌、响的还是旧歌、按钮管不住"
+/* v9.31 首段秒播（替代 v9.28 整曲优先）：先取开头 2MB 立刻开播，整曲在后台下完后同位置无缝换上。
+   整曲优先被用户真机否掉：通道慢时整曲迟迟下不完、连点切歌更是一首也落不了地。 */
+audio.pause(); // v9.30：新歌还在加载时先停掉旧歌——不能再出现"标题是新歌、响的还是旧歌、按钮管不住"
 loadingSong=song;
-blobUrl(song).then(async ou=>{
+if(curPrefixCtl) curPrefixCtl.abort();
+curPrefixCtl=new AbortController();
+prefixUrl(song, curPrefixCtl).then(async pu=>{
+  if(playSeq!==mySeq || queue[qi]!==song) return; // 已切走
   if(loadingSong===song) loadingSong=null;
-  if(playSeq!==mySeq || queue[qi]!==song) return; // 已切走：下好的留缓存即可
-  audio.src=ou; song._swapped=true;
+  audio.src=pu;
   if(autoplay){
     try{ await audio.play(); }catch(e){}
     loading=false; setPlayStatus(""); hideToast();
     prefetchNext(); ensureQueue();
   } else loading=false;
-}).catch(e=>{
-  if(loadingSong===song) loadingSong=null;
-  if(e && e.superseded) return; // 已被更新的点播取代，静默作废
-  if(playSeq!==mySeq || queue[qi]!==song) return;
-  handleSongFailed(song, e);
+  if(objCache[song.p] && objCache[song.p]===pu){ song._swapped=true; return; } // 首段即整曲（小文件）
+  // 整曲随后接上：下完把首段临时源换成整曲源（同位置、不断播）
+  blobUrl(song).then(ou=>{
+    if(queue[qi]!==song || audio.src!==pu) return;
+    const wasPlaying=!audio.paused && !audio.ended, ct=audio.currentTime||0;
+    audio.src=ou; song._swapped=true;
+    try{ audio.currentTime=ct; }catch(e){}
+    if(wasPlaying) audio.play().catch(()=>{});
+    if(prefixUrls[song.p]){ URL.revokeObjectURL(prefixUrls[song.p]); delete prefixUrls[song.p]; }
+  }).catch(()=>{});
+}).catch(async e=>{
+  if(playSeq!==mySeq || queue[qi]!==song){ if(loadingSong===song) loadingSong=null; return; } // 已被更新的点播取代
+  // 首段也取不到：退回等整曲（v9.30 的路）
+  try{
+    const ou=await blobUrl(song);
+    if(loadingSong===song) loadingSong=null;
+    if(playSeq!==mySeq || queue[qi]!==song) return;
+    audio.src=ou; song._swapped=true;
+    if(autoplay){ try{ await audio.play(); }catch(err){} loading=false; setPlayStatus(""); hideToast(); prefetchNext(); ensureQueue(); }
+    else loading=false;
+  }catch(e2){
+    if(loadingSong===song) loadingSong=null;
+    if(e2 && e2.superseded) return;
+    if(playSeq!==mySeq || queue[qi]!==song) return;
+    handleSongFailed(song, e2);
+  }
 });
 }
 // 直链失败（如 SW 还没拿到凭据）→ 回退到 fetch+blob
