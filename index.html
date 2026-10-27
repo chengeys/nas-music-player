@@ -15,7 +15,7 @@ if(_tl){document.documentElement.classList.add("light");document.querySelector('
 <meta name="apple-mobile-web-app-title" content="知行音乐">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon.svg">
-<link rel="stylesheet" href="style.css?v=9.44">
+<link rel="stylesheet" href="style.css?v=9.45">
 </head>
 <body>
 <div id="app">
@@ -35,27 +35,44 @@ if(_tl){document.documentElement.classList.add("light");document.querySelector('
       <div class="qq-greet" id="qqGreet">音乐馆</div>
       <div class="qq-sub" id="qqStats">-</div>
     </div>
-    <div class="qq-quick">
-      <button data-go="rec">❤️<span>猜你喜欢</span></button>
-      <button data-go="recent">🕘<span>最近播放</span></button>
-      <button data-go="shuffle">🎲<span>随机听</span></button>
-      <button data-go="folders">📁<span>我的合集</span></button>
+    <div class="feat-row">
+      <button class="feat-card feat-daily" id="featDaily">
+        <span class="feat-deco">♫</span>
+        <span class="feat-tt">每日推荐</span>
+        <span class="feat-sub">按你的口味精选</span>
+        <span class="feat-play">▶</span>
+      </button>
+      <button class="feat-card feat-run" id="runBtn">
+        <span class="feat-deco">🏃</span>
+        <span class="feat-tt">跑步模式</span>
+        <span class="feat-sub">180 步频 · 一键开跑自动连播</span>
+        <span class="feat-play">▶</span>
+      </button>
+      <button class="feat-card feat-shuffle" data-go="shuffle">
+        <span class="feat-deco">🎲</span>
+        <span class="feat-tt">随机听</span>
+        <span class="feat-sub">全库随机，碰碰运气</span>
+        <span class="feat-play">▶</span>
+      </button>
     </div>
-    <div class="qq-run">
-      <button id="runBtn">🏃 跑步模式 · 180 步频<span>不用选歌，一键开跑，自动连播</span></button>
+    <div class="qq-quick">
+      <button data-go="rec"><i class="qq-ic">❤️</i><span>猜你喜欢</span></button>
+      <button data-go="recent"><i class="qq-ic">🕘</i><span>最近播放</span></button>
+      <button data-go="shuffle"><i class="qq-ic">🎲</i><span>随机听</span></button>
+      <button data-go="folders"><i class="qq-ic">📁</i><span>我的合集</span></button>
     </div>
     <div class="block" id="blockFolders">
-      <h2>我的合集</h2>
-      <div id="folderList" class="qq-grid"></div>
+      <h2>推荐合集</h2>
+      <div id="folderList" class="folder-row"></div>
     </div>
     <div class="block" id="blockRec">
       <h2>猜你喜欢 <button id="refreshRec" class="mini-btn">换一批</button></h2>
-      <div id="recList" class="songlist"><p class="empty">多听几首，推荐越准</p></div>
+      <div id="recList" class="songlist flatlist"><p class="empty">多听几首，推荐越准</p></div>
       <button id="recMore" class="more-btn" style="display:none"></button>
     </div>
     <div class="block" id="blockRecent">
       <h2>继续听</h2>
-      <div id="recentList" class="songlist"><p class="empty">还没有播放记录，听几首歌就记住了</p></div>
+      <div id="recentList" class="songlist flatlist"><p class="empty">还没有播放记录，听几首歌就记住了</p></div>
     </div>
   </section>
 
@@ -232,7 +249,7 @@ if(_tl){document.documentElement.classList.add("light");document.querySelector('
 </div>
 
 <script src="catalog.js"></script>
-<script src="cloud.js?v=9.44"></script>
-<script src="app.js?v=9.44"></script>
+<script src="cloud.js?v=9.45"></script>
+<script src="app.js?v=9.45"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.44 2026-10-28";
+const APP_VER = "v9.45 2026-10-28";
 
 /* v9.43 换域名搬家：新地址带 #mv1=<base64> 打开时，先把旧地址带来的本地数据写入本域名（必须在读 cfg 前） */
 (function(){ try{
@@ -1072,9 +1072,8 @@ function gradFor(name){ let h=0; for(const ch of name) h=(h*31+ch.codePointAt(0)
   return GRADS[h%GRADS.length]; }
 Object.values(folders).sort((a,b)=>b.c-a.c).forEach(f=>{
 const b=document.createElement("button"); b.className="qq-card";
-b.innerHTML=`<div class="qq-card-bg" style="background:${gradFor(f.n)}"></div>
-  <div class="qq-play">▶</div>
-  <div class="qq-card-info"><b></b><span>${f.c} 首</span></div>`;
+b.innerHTML=`<span class="qq-art" style="background:${gradFor(f.n)}"><span class="qq-deco">♪</span><span class="qq-cnt">${f.c} 首</span><span class="qq-play">▶</span></span>
+  <span class="qq-cap"><b></b></span>`;
 b.querySelector("b").textContent=f.n;
 b.querySelector(".qq-play").onclick=e=>{ e.stopPropagation();
   const ss=CATALOG.filter(s=>s.f===f.n); runMode=false; queue=ss.slice(); playAt(0); };
@@ -1249,6 +1248,10 @@ $("forceUpdate").onclick=async ()=>{
 };
 $("appVer").textContent=APP_VER;
 /* v9.43 接线：主题三档 / 搬家 / 字形 / 进度条拖动变粗 */
+/* v9.45 首页「每日推荐」特色卡：直接播推荐队列 */
+const featDailyEl=$("featDaily");
+if(featDailyEl) featDailyEl.onclick=()=>{ runMode=false; const recs=recommend(30);
+  if(recs.length){ queue=recs.slice(); playAt(0); } else toast("多听几首，推荐就来了"); };
 document.querySelectorAll("#themeRow button").forEach(b=>{ b.onclick=()=>{ cfg.theme=b.dataset.theme; saveCfg(); applyTheme(); toast(b.dataset.theme==="auto"?"外观：跟随系统":(b.dataset.theme==="light"?"外观：浅色":"外观：深色"),"ok",1800); }; });
 applyTheme();
 if(sessionStorage.getItem("zmusic.mvmsg")){ sessionStorage.removeItem("zmusic.mvmsg"); setTimeout(()=>toast("已从旧地址搬入：喜欢、设置与云歌单登录","ok",5000), 600); }
