@@ -1,7 +1,7 @@
 /* 知行音乐 Service Worker v1 */
-const CACHE = "zmusic-v51";
+const CACHE = "zmusic-v52";
 // 注意：catalog.js 不预缓存（走网络优先），避免大文件导致安装失败
-const SHELL = ["./","./index.html","./style.css?v=9.25","./app.js?v=9.25","./cloud.js?v=9.25","./manifest.json","./icon.svg"];
+const SHELL = ["./","./index.html","./style.css?v=9.26","./app.js?v=9.26","./cloud.js?v=9.26","./manifest.json","./icon.svg"];
 
 // NAS 认证头（由页面 postMessage 传入）
 // v9.12 起同步持久化到 IndexedDB：SW 内存变量在 SW 被系统回收重启后会清零
@@ -57,6 +57,9 @@ self.addEventListener("activate", e=>{
   e.waitUntil(caches.keys().then(ks=>Promise.all(
     ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));
 });
+function davNote(info){
+  try{ self.clients.matchAll({type:"window"}).then(cs=>cs.forEach(c=>c.postMessage({type:"DIAG", info}))).catch(()=>{}); }catch(e){}
+}
 self.addEventListener("fetch", e=>{
   const u = new URL(e.request.url);
   // NAS 音频：凡是 /dav/ 路径（老通道 yjm.ccwu.cc 或新直达 app.ipls.cn/dav）都注入认证头，支持 <audio> 流式直播
@@ -83,8 +86,9 @@ self.addEventListener("fetch", e=>{
           const sa=await idbGetAuth();
           if(sa && sa!==cred.auth){ DAV_AUTH=sa; r = await send({auth:sa, token:""}); }
         }
+        if(r.status>=400) davNote(r.status + " " + u.pathname.split("/").slice(-1)[0]);
         return r;
-      }catch(err){ return fetch(e.request); }
+      }catch(err){ davNote("NETERR " + u.pathname.split("/").slice(-1)[0]); return fetch(e.request); }
     })());
     return;
   }

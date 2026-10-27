@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.25 2026-10-27";
+const APP_VER = "v9.26 2026-10-27";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -181,6 +181,22 @@ function applyMeta(song){
     if($("fpDetail").style.display!=="none") renderDetail(song);
     updateLikeBtn(song);
   }).catch(()=>{});
+}
+/* 诊断日志（v9.26）：把播放链路的关键事件记到本机，设置页可看、供截图定位 */
+const DIAG_KEY = "zmusic.diag.v1";
+function diag(kind, info){
+  try{
+    const a = JSON.parse(localStorage.getItem(DIAG_KEY) || "[]");
+    a.push(new Date().toTimeString().slice(0,8) + " " + kind + " " + (info || ""));
+    while(a.length > 40) a.shift();
+    localStorage.setItem(DIAG_KEY, JSON.stringify(a));
+    const el = $("diagLog"); if(el) el.textContent = a.join("\n");
+  }catch(e){}
+}
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.addEventListener("message", e=>{
+    if(e.data && e.data.type === "DIAG") diag("DAV", e.data.info);
+  });
 }
 /* 把认证头推给 SW，用于 <audio> 直链 */
 function pushAuthToSW(){
@@ -413,6 +429,7 @@ document.addEventListener("visibilitychange",()=>{
 function playAt(i, autoplay=true){
 if(i<0||i>=queue.length) return;
 qi=i; const song=queue[qi]; fbRetry=false;
+diag("PLAY", song.t + " / " + (song.a || ""));
 song._swapped=false; song._preSwitched=false; song._played=false;
 stallActs=0; lastProgAt=Date.now(); lastProgTime=0;
 try{ pushAuthToSW(); }catch(e){} // 每次播放前把 NAS 凭据再推给 SW（新域名 SW 刚就位时防直链 401）
@@ -454,6 +471,7 @@ if(autoplay){
 }
 // 直链失败（如 SW 还没拿到凭据）→ 回退到 fetch+blob
 audio.addEventListener("error",()=>{
+  diag("AERR", "code=" + (audio.error ? audio.error.code : "?") + " rs=" + audio.readyState);
   const song=queue[qi];
   if(song && !fbRetry && audio.readyState<2 && !audio.currentTime){
     fbRetry=true; playFallback(song, new Error("audio error"));
@@ -461,6 +479,7 @@ audio.addEventListener("error",()=>{
 });
 /* 一首歌彻底加载失败：自动跳下一首保住连播；连坏太多首（或队列只有一首）才停下报错 */
 function handleSongFailed(song, e, msg){
+  diag("FAIL", song.t + " " + ((e && (e.msg || e.message)) || msg || ""));
   if(queue[qi]!==song) return;
   if(e && e.name==="AbortError") return; // play() 被新一首的加载打断是正常切歌，不算失败（v9.13：此前会误判连环跳歌）
   loading=false;
@@ -475,6 +494,7 @@ function handleSongFailed(song, e, msg){
   playAt((qi+1)%queue.length);
 }
 async function playFallback(song, origErr){
+  diag("FALLBACK", (origErr && (origErr.message || origErr.msg)) || "");
   if(queue[qi]!==song) return;
   if(fbRetry) return; fbRetry=true; // 同一首只回退一次：error 事件与 play() 拒绝两条路此前会各跑一遍、互相打断（v9.13）
   toast("正在加载《"+dispTitle(song)+"》…");
@@ -1008,6 +1028,7 @@ $("forceUpdate").onclick=async ()=>{
   location.replace(location.pathname + "?u=" + Date.now()); // 破 4 小时 HTTP 缓存：换 URL 取新版首页
 };
 $("appVer").textContent=APP_VER;
+try{ const a=JSON.parse(localStorage.getItem(DIAG_KEY)||"[]"); if(a.length && $("diagLog")) $("diagLog").textContent=a.join("\n"); }catch(e){}
 }
 
 /* ---------- 启动 ---------- */
@@ -1015,7 +1036,7 @@ document.addEventListener("DOMContentLoaded",()=>{
 if(typeof CATALOG==="undefined"||!CATALOG.length){ alert("曲库加载失败"); return;}
 bind(); renderHome();
 if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("sw.js").catch(()=>{});
+  navigator.serviceWorker.register("sw.js", {updateViaCache:"none"}).catch(()=>{});
   // SW 就绪后把认证头推过去
   navigator.serviceWorker.ready.then(()=>pushAuthToSW()).catch(()=>{});
   setTimeout(pushAuthToSW, 3000); // 兜底再推一次
