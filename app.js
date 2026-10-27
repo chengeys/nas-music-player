@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.33 2026-10-28";
+const APP_VER = "v9.34 2026-10-28";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -583,9 +583,13 @@ prefixUrl(song, curPrefixCtl).then(async pu=>{
 }
 // 直链失败（如 SW 还没拿到凭据）→ 回退到 fetch+blob
 audio.addEventListener("error",()=>{
-  const cs=queue[qi];
-  if(cs && cs._swapAt && Date.now()-cs._swapAt<2000){ diag("SWAPERR", "换源过渡 code=" + (audio.error ? audio.error.code : "?")); return; }
-  diag("AERR", "code=" + (audio.error ? audio.error.code : "?") + " rs=" + audio.readyState);
+  const code=(audio.error ? audio.error.code : "?");
+  // v9.34：按结果分类——换源会中断旧资源上未完的 seek/加载、冒出过渡性 error；延迟 600ms 看元素
+  // 是否已在正常出声：是＝良性过渡记 SWAPERR，否＝真错误记 AERR（v9.33 按时刻猜，老路径换源漏检）。
+  setTimeout(()=>{
+    if(!audio.paused && audio.readyState>=2) diag("SWAPERR", "过渡 code=" + code);
+    else diag("AERR", "code=" + code + " rs=" + audio.readyState);
+  },600);
   // v9.32：只记录，不再召唤 playFallback。首段架构下恢复由主流程负责（首段失败→等整曲；换源瞬间
   // 的过渡性 error 属正常现象），旧救援路一插手就会抢夺 <audio>，实测会把用户的暂停顶掉。
 });
