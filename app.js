@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.32 2026-10-28";
+const APP_VER = "v9.33 2026-10-28";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -557,6 +557,7 @@ prefixUrl(song, curPrefixCtl).then(async pu=>{
     if(queue[qi]!==song || audio.src!==pu) return;
     const wasPlaying=!audio.paused && !audio.ended, ct=audio.currentTime||0;
     const stalled=!song._played && (audio.currentTime||0)<0.05; // 首段被 error 卡死、根本没播起来过
+    song._swapAt=Date.now(); // 换源时刻（v9.33）：紧随其后的过渡性 error 单独记 SWAPERR
     audio.src=ou; song._swapped=true;
     try{ audio.currentTime=ct; }catch(e){}
     if(wasPlaying || stalled) audio.play().catch(()=>{});
@@ -582,6 +583,8 @@ prefixUrl(song, curPrefixCtl).then(async pu=>{
 }
 // 直链失败（如 SW 还没拿到凭据）→ 回退到 fetch+blob
 audio.addEventListener("error",()=>{
+  const cs=queue[qi];
+  if(cs && cs._swapAt && Date.now()-cs._swapAt<2000){ diag("SWAPERR", "换源过渡 code=" + (audio.error ? audio.error.code : "?")); return; }
   diag("AERR", "code=" + (audio.error ? audio.error.code : "?") + " rs=" + audio.readyState);
   // v9.32：只记录，不再召唤 playFallback。首段架构下恢复由主流程负责（首段失败→等整曲；换源瞬间
   // 的过渡性 error 属正常现象），旧救援路一插手就会抢夺 <audio>，实测会把用户的暂停顶掉。
@@ -635,7 +638,7 @@ if(loadingSong){ // 正在整曲加载（v9.30）：按钮取消加载意图，�
 }
 if(loadCancelled && loadCancelled===queue[qi]){ loadCancelled=null; return playAt(qi); }
 if(!audio.src && queue.length) return playAt(0);
-if(audio.paused) audio.play(); else audio.pause();
+if(audio.paused){ const pr=audio.play(); if(pr&&pr.catch) pr.catch(()=>{}); } else audio.pause();
 }
 function next(auto=false){
 if(!queue.length) return;
@@ -783,6 +786,7 @@ function preSwitch(){
   if(!ns || ns===song) return;
   const blob=objCache[ns.p];
   const useBlob=!!blob;
+  if(!useBlob) return; // v9.33：下一首整曲没备好就不提前切——绝不回流式直链兜底，留给 ended→playAt 走首段秒播
   song._preSwitched=true;
   logPlay(song,true);
   qi=ni; ns._swapped=useBlob;
