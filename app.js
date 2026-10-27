@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.23 2026-10-27";
+const APP_VER = "v9.24 2026-10-27";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -905,11 +905,6 @@ document.querySelectorAll("#tabbar button").forEach(b=>b.classList.toggle("activ
 }
 
 /* ---------- 设置 ---------- */
-function showCfgMode(){
-  const el=$("cfgMode"); if(!el) return;
-  if(cfg.pass){ el.textContent="连接方式：本机保存的账号（优先）"; }
-  else { el.textContent="连接方式：服务器代管（只读）"; }
-}
 /* ---------- 事件绑定 ---------- */
 function bind(){
 document.querySelectorAll("#tabbar button").forEach(b=>b.onclick=()=>showView(b.dataset.view));
@@ -1012,7 +1007,6 @@ $("forceUpdate").onclick=async ()=>{
   }catch(e){}
   location.replace(location.pathname + "?u=" + Date.now()); // 破 4 小时 HTTP 缓存：换 URL 取新版首页
 };
-showCfgMode();
 $("appVer").textContent=APP_VER;
 }
 
