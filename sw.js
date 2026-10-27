@@ -1,7 +1,7 @@
 /* 知行音乐 Service Worker v1 */
-const CACHE = "zmusic-v47";
+const CACHE = "zmusic-v48";
 // 注意：catalog.js 不预缓存（走网络优先），避免大文件导致安装失败
-const SHELL = ["./","./index.html","./style.css?v=9.21","./app.js?v=9.21","./cloud.js?v=9.21","./manifest.json","./icon.svg"];
+const SHELL = ["./","./index.html","./style.css?v=9.22","./app.js?v=9.22","./cloud.js?v=9.22","./manifest.json","./icon.svg"];
 
 // NAS 认证头（由页面 postMessage 传入）
 // v9.12 起同步持久化到 IndexedDB：SW 内存变量在 SW 被系统回收重启后会清零
@@ -18,34 +18,37 @@ function idbOpen(){
     }catch(e){ res(null); }
   });
 }
-async function idbGetAuth(){
+async function idbGetKey(k){
   const db=await idbOpen(); if(!db) return "";
   return new Promise(res=>{
     try{
-      const g=db.transaction("kv").objectStore("kv").get("davAuth");
+      const g=db.transaction("kv").objectStore("kv").get(k);
       g.onsuccess=()=>res(g.result||"");
       g.onerror=()=>res("");
     }catch(e){ res(""); }
   });
 }
-async function idbSetAuth(v){
+async function idbSetKey(k,v){
   const db=await idbOpen(); if(!db) return;
-  try{ db.transaction("kv","readwrite").objectStore("kv").put(v,"davAuth"); }catch(e){}
+  try{ db.transaction("kv","readwrite").objectStore("kv").put(v,k); }catch(e){}
 }
+const idbGetAuth=()=>idbGetKey("davAuth");
+const idbSetAuth=v=>idbSetKey("davAuth",v);
 // 取凭据：内存优先，没有就从 IndexedDB 读回；仍为空时稍等再读一次，
 // 兜住页面 SET_AUTH 消息与 <audio> 请求前后脚到达的竞态
-async function getAuth(){
-  if(DAV_AUTH) return DAV_AUTH;
-  DAV_AUTH=await idbGetAuth();
-  if(DAV_AUTH) return DAV_AUTH;
+let DAV_TOKEN = "";
+async function getCreds(){
+  if(DAV_AUTH || DAV_TOKEN) return {auth:DAV_AUTH, token:DAV_TOKEN};
+  DAV_AUTH=await idbGetAuth(); DAV_TOKEN=await idbGetKey("davToken");
+  if(DAV_AUTH || DAV_TOKEN) return {auth:DAV_AUTH, token:DAV_TOKEN};
   await new Promise(r=>setTimeout(r,250));
-  DAV_AUTH=await idbGetAuth();
-  return DAV_AUTH;
+  DAV_AUTH=await idbGetAuth(); DAV_TOKEN=await idbGetKey("davToken");
+  return {auth:DAV_AUTH, token:DAV_TOKEN};
 }
 self.addEventListener("message", e=>{
-  if(e.data && e.data.type==="SET_AUTH" && e.data.auth){
-    DAV_AUTH=e.data.auth;
-    idbSetAuth(DAV_AUTH);
+  if(e.data && e.data.type==="SET_AUTH"){
+    if(e.data.auth){ DAV_AUTH=e.data.auth; DAV_TOKEN=""; idbSetAuth(DAV_AUTH); idbSetKey("davToken",""); }
+    else if(e.data.token){ DAV_TOKEN=e.data.token; DAV_AUTH=""; idbSetKey("davToken",DAV_TOKEN); idbSetAuth(""); }
   }
 });
 self.addEventListener("install", e=>{
@@ -63,24 +66,25 @@ self.addEventListener("fetch", e=>{
       // 带认证发请求。关键坑（v9.13）：<audio> 直链是 no-cors 请求，
       // 克隆它再塞 Authorization 会被 fetch 规范静默过滤（CORS 安全清单外），
       // 表现就是"页面 fetch 能过、媒体请求必 401"。GET 一律改走 cors 模式重发。
-      const send = async auth=>{
+      const send = async cred=>{
         const h = new Headers(e.request.headers);
-        h.set("Authorization", auth);
+        if(cred.auth) h.set("Authorization", cred.auth);
+        else if(cred.token) h.set("X-App-Token", cred.token);
         if(e.request.method==="GET"){
           return fetch(e.request.url, {method:"GET", headers:h, mode:"cors", credentials:"omit", redirect:"follow"});
         }
         return fetch(new Request(e.request, {headers:h}));
       };
       try{
-        const auth=await getAuth();
-        if(!auth) return fetch(e.request);
-        let r = await send(auth);
+        const cred=await getCreds();
+        if(!cred.auth && !cred.token) return fetch(e.request);
+        let r = await send(cred);
         if(r.status===401){
           // 内存里的凭据可能已过期（如刚改过密码）：从持久化重读一次再试
-          const stored=await idbGetAuth();
-          if(stored && stored!==auth){
-            DAV_AUTH=stored;
-            r = await send(stored);
+          const sa=await idbGetAuth(), st=await idbGetKey("davToken");
+          if((sa && sa!==cred.auth) || (st && st!==cred.token)){
+            DAV_AUTH=sa; DAV_TOKEN=st;
+            r = await send({auth:sa, token:st});
           }
         }
         return r;

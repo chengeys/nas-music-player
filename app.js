@@ -1,14 +1,14 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.21 2026-10-27";
+const APP_VER = "v9.22 2026-10-27";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
 function loadCfg(){
-try{ return Object.assign({dav:"https://nas.yjm.ccwu.cc/dav",user:"ai",pass:""},
+try{ return Object.assign({dav:"https://nas.yjm.ccwu.cc/dav",user:"",pass:""},
 JSON.parse(localStorage.getItem(CFG_KEY)||"{}"));}
-catch(e){ return {dav:"https://nas.yjm.ccwu.cc/dav",user:"ai",pass:""};}
+catch(e){ return {dav:"https://nas.yjm.ccwu.cc/dav",user:"",pass:""};}
 }
 let cfg = loadCfg();
 function saveCfg(){ localStorage.setItem(CFG_KEY, JSON.stringify(cfg));}
@@ -20,6 +20,16 @@ let bin = ""; bytes.forEach(b=>bin+=String.fromCharCode(b));
 return btoa(bin);
 }
 function authHeader(){ return "Basic " + b64encodeUnicode(cfg.user+":"+cfg.pass);}
+/* 门禁令牌（v9.22 服务器代管）：密码不进网页，由 app-portal 入口凭此令牌代为注入
+   只读账号 music 的凭据。令牌可随时在服务器端作废重发，与 NAS 密码无关。
+   设置里自填了密码则优先用自填账号，令牌不参与。 */
+const APP_TOKEN = "44cfc15c832bcbb1fe205427f728f001";
+function davHeaders(extra){
+  const h = Object.assign({}, extra||{});
+  if(cfg.pass) h.Authorization = authHeader();
+  else h["X-App-Token"] = APP_TOKEN;
+  return h;
+}
 /* 取歌通道：在 app.ipls.cn 域名下走本站 /dav 直达转发（经 Cloudflare 就近直达家里 NAS，
    不再绕香港那台服务器的反代）；其他域名仍用设置里填的地址。账号密码始终用设置里的 */
 function davBase(){
@@ -130,7 +140,7 @@ function getSongMeta(song){
   const p=(async()=>{
     const m={lyrics:null,coverUrl:null};
     try{
-      const H={Authorization:authHeader()};
+      const H=davHeaders();
       let buf=null;
       const r1=await fetch(songUrl(song),{headers:Object.assign({},H,{Range:"bytes=0-9"})});
       if(r1.ok){
@@ -174,7 +184,7 @@ function applyMeta(song){
 }
 /* 把认证头推给 SW，用于 <audio> 直链 */
 function pushAuthToSW(){
-  const msg={type:"SET_AUTH", auth:authHeader()};
+  const msg={type:"SET_AUTH", auth:(cfg.pass?authHeader():""), token:APP_TOKEN};
   try{
     if(navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage(msg);
     if("serviceWorker" in navigator){
@@ -329,7 +339,7 @@ const url=songUrl(song);
 let lastErr=null;
 for(let attempt=0;attempt<3;attempt++){
 try{
-const r=await fetch(url,{headers:{Authorization:authHeader()}});
+const r=await fetch(url,{headers:davHeaders()});
 if(r.status===401) throw {code:401,msg:"账号或密码不对（401），去设置页检查"};
 if(r.status===502||r.status===503||r.status===504){
   lastErr={code:r.status,msg:"NAS 返回 "+r.status};
@@ -895,12 +905,17 @@ document.querySelectorAll("#tabbar button").forEach(b=>b.classList.toggle("activ
 }
 
 /* ---------- 设置 ---------- */
+function showCfgMode(){
+  const el=$("cfgMode"); if(!el) return;
+  if(cfg.pass){ el.textContent="当前：自填账号模式（"+(cfg.user||"")+"），密码只存在本机。"; }
+  else { el.textContent="当前：门禁模式——服务器代管只读账号，免填即可播放；填上账号密码则改用自填。"; }
+}
 async function testConn(){
 const el=$("connStatus"); el.className="hint"; el.textContent="测试中…";
 const base=davBase();
 try{
 const r=await fetch(base+"/music/",{method:"PROPFIND",
-headers:{Authorization:authHeader(),Depth:"1"}});
+headers:davHeaders({Depth:"1"})});
 if(r.status===207){ el.className="hint ok"; el.textContent="✅ 连接正常，可以播歌了";}
 else if(r.status===401){ el.className="hint err"; el.textContent="❌ 账号或密码不对（401）";}
 else { el.className="hint err"; el.textContent="❌ NAS 返回 "+r.status+"，检查音乐地址";}
@@ -997,8 +1012,8 @@ $("fpList").onclick=()=>{
 $("fpQueueClose").onclick=()=>showQueuePanel(false);
 // 设置
 $("saveCfg").onclick=()=>{ cfg.dav=$("cfgDav").value.trim()||cfg.dav;
-cfg.user=$("cfgUser").value.trim()||"ai"; cfg.pass=$("cfgPass").value;
-saveCfg(); pushAuthToSW();
+cfg.user=$("cfgUser").value.trim(); cfg.pass=$("cfgPass").value;
+saveCfg(); pushAuthToSW(); showCfgMode();
 $("connStatus").className="hint"; $("connStatus").textContent="已保存";};
 $("testConn").onclick=testConn;
 $("clearHist").onclick=()=>{ if(confirm("清除本机所有播放记录？")){ hist={}; saveHist(); renderHome();}};
@@ -1018,6 +1033,7 @@ $("forceUpdate").onclick=async ()=>{
   location.replace(location.pathname + "?u=" + Date.now()); // 破 4 小时 HTTP 缓存：换 URL 取新版首页
 };
 $("cfgDav").value=cfg.dav; $("cfgUser").value=cfg.user; $("cfgPass").value=cfg.pass||"";
+showCfgMode();
 $("appVer").textContent=APP_VER;
 }
 

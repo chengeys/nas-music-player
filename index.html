@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-title" content="知行音乐">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon.svg">
-<link rel="stylesheet" href="style.css?v=9.21">
+<link rel="stylesheet" href="style.css?v=9.22">
 </head>
 <body>
 <div id="app">
@@ -86,7 +86,7 @@
         <input id="cfgDav" type="url" placeholder="https://nas.yjm.ccwu.cc/dav">
       </label>
       <label>账号
-        <input id="cfgUser" type="text" placeholder="ai" autocomplete="username">
+        <input id="cfgUser" type="text" placeholder="留空＝门禁模式" autocomplete="username">
       </label>
       <label>密码
         <input id="cfgPass" type="password" placeholder="NAS 密码" autocomplete="current-password">
@@ -95,6 +95,7 @@
         <button id="saveCfg" class="btn">保存</button>
         <button id="testConn" class="btn ghost">测试连接</button>
       </div>
+      <p id="cfgMode" class="hint"></p>
       <p id="connStatus" class="hint"></p>
       <p class="hint">密码只保存在本机浏览器里，不会上传到任何地方。</p>
     </div>
@@ -211,7 +212,7 @@
 </div>
 
 <script src="catalog.js"></script>
-<script src="cloud.js?v=9.21"></script>
-<script src="app.js?v=9.21"></script>
+<script src="cloud.js?v=9.22"></script>
+<script src="app.js?v=9.22"></script>
 </body>
 </html>
