@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.22 2026-10-27";
+const APP_VER = "v9.23 2026-10-27";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -907,24 +907,9 @@ document.querySelectorAll("#tabbar button").forEach(b=>b.classList.toggle("activ
 /* ---------- 设置 ---------- */
 function showCfgMode(){
   const el=$("cfgMode"); if(!el) return;
-  if(cfg.pass){ el.textContent="当前：自填账号模式（"+(cfg.user||"")+"），密码只存在本机。"; }
-  else { el.textContent="当前：门禁模式——服务器代管只读账号，免填即可播放；填上账号密码则改用自填。"; }
+  if(cfg.pass){ el.textContent="连接方式：本机保存的账号（优先）"; }
+  else { el.textContent="连接方式：服务器代管（只读）"; }
 }
-async function testConn(){
-const el=$("connStatus"); el.className="hint"; el.textContent="测试中…";
-const base=davBase();
-try{
-const r=await fetch(base+"/music/",{method:"PROPFIND",
-headers:davHeaders({Depth:"1"})});
-if(r.status===207){ el.className="hint ok"; el.textContent="✅ 连接正常，可以播歌了";}
-else if(r.status===401){ el.className="hint err"; el.textContent="❌ 账号或密码不对（401）";}
-else { el.className="hint err"; el.textContent="❌ NAS 返回 "+r.status+"，检查音乐地址";}
-}catch(e){
-el.className="hint err";
-el.textContent="❌ 连不上：反代可能没开，或没按说明配 CORS（看 README 的 nginx 片段）";
-}
-}
-
 /* ---------- 事件绑定 ---------- */
 function bind(){
 document.querySelectorAll("#tabbar button").forEach(b=>b.onclick=()=>showView(b.dataset.view));
@@ -1011,11 +996,6 @@ $("fpList").onclick=()=>{
 };
 $("fpQueueClose").onclick=()=>showQueuePanel(false);
 // 设置
-$("saveCfg").onclick=()=>{ cfg.dav=$("cfgDav").value.trim()||cfg.dav;
-cfg.user=$("cfgUser").value.trim(); cfg.pass=$("cfgPass").value;
-saveCfg(); pushAuthToSW(); showCfgMode();
-$("connStatus").className="hint"; $("connStatus").textContent="已保存";};
-$("testConn").onclick=testConn;
 $("clearHist").onclick=()=>{ if(confirm("清除本机所有播放记录？")){ hist={}; saveHist(); renderHome();}};
 $("forceUpdate").onclick=async ()=>{
   if(!confirm("将清除本地缓存并重新加载最新版，继续？")) return;
@@ -1032,7 +1012,6 @@ $("forceUpdate").onclick=async ()=>{
   }catch(e){}
   location.replace(location.pathname + "?u=" + Date.now()); // 破 4 小时 HTTP 缓存：换 URL 取新版首页
 };
-$("cfgDav").value=cfg.dav; $("cfgUser").value=cfg.user; $("cfgPass").value=cfg.pass||"";
 showCfgMode();
 $("appVer").textContent=APP_VER;
 }
