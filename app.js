@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.27 2026-10-27";
+const APP_VER = "v9.28 2026-10-27";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -350,23 +350,27 @@ audio.preload="auto";
 let queue=[], qi=-1, objCache={}, blobCache={}, loading=false;
 
 const blobInflight={};
+let dlChain=Promise.resolve();
+/* 全局串行闸（v9.28）：任何时刻只允许一首整曲在下载——当前歌、预取、回退全走这道闸，窄通道不内耗 */
+function dlGate(song){ const job=dlChain.then(()=>blobDownload(song), ()=>blobDownload(song)); dlChain=job.then(()=>{},()=>{}); return job; }
 async function blobUrl(song){
 if(objCache[song.p]) return objCache[song.p];
 if(blobInflight[song.p]) return blobInflight[song.p]; // 在途去重（v9.27）：别把同一首歌下两遍
-const job=blobDownload(song);
+const job=dlGate(song);
 blobInflight[song.p]=job;
 try{ return await job; } finally{ delete blobInflight[song.p]; }
 }
 async function blobDownload(song){
 const url=songUrl(song);
 let lastErr=null;
-for(let attempt=0;attempt<3;attempt++){
+for(let attempt=0;attempt<2;attempt++){
+const ctl=new AbortController(); const dlT=setTimeout(()=>ctl.abort(), 40000); // 单次 40 秒死线（v9.28）：细流假死的连接不能无限期占通道
 try{
-const r=await fetch(url,{headers:davHeaders()});
+const r=await fetch(url,{headers:davHeaders(), signal:ctl.signal});
 if(r.status===401) throw {code:401,msg:"账号或密码不对（401），去设置页检查"};
 if(r.status===502||r.status===503||r.status===504){
   lastErr={code:r.status,msg:"NAS 返回 "+r.status};
-  toast("网络抖动，正在重试…("+(attempt+1)+"/3)");
+  toast("网络抖动，正在重试…("+(attempt+1)+"/2)");
   await new Promise(r2=>setTimeout(r2,1500)); continue;
 }
 if(!r.ok) throw {code:r.status,msg:"NAS 返回 "+r.status};
@@ -380,15 +384,16 @@ URL.revokeObjectURL(objCache[old]); delete objCache[old]; delete blobCache[old];
 return ou;
 }catch(e){
 if(e&&e.code===401) throw e;
-if(e instanceof TypeError){ lastErr=e; await new Promise(r2=>setTimeout(r2,1500)); continue; }
+if(e instanceof TypeError || (e&&e.name==="AbortError")){ lastErr={code:0,msg:"下载超时或网络中断"}; await new Promise(r2=>setTimeout(r2,1500)); continue; }
 throw e;
+}finally{ clearTimeout(dlT); }
 }
-}
-throw lastErr||{code:0,msg:"重试3次仍失败"};
+throw lastErr||{code:0,msg:"重试后仍失败"};
 }
 
 /* 双保险播放：先流式秒播，后台下载完整文件后无缝切换（保锁屏） */
 let fbRetry=false;
+let playSeq=0; // 播放代次（v9.28）：切歌后让上一首的异步加载自动作废
 /* 连播容错：连续加载失败计数 + 卡住看门狗计时器 */
 let failStreak=0;
 let stallTimer=null;
@@ -450,13 +455,6 @@ try{ pushAuthToSW(); }catch(e){} // 每次播放前把 NAS 凭据再推给 SW（
 // 有预取好的本地文件就直接用（锁屏连播可靠），否则走流式秒播
 const cached=objCache[song.p];
 audioPlaying=false;
-if(cached){ audio.src=cached; song._swapped=true; }
-else { audio.src=songUrl(song); }
-// play() 越早调越好（锁屏自动连播就靠这一手）
-let playPromise=null;
-if(autoplay){
-  try{ playPromise=audio.play(); }catch(e){ playPromise=Promise.reject(e); }
-}
 loading=true; setPlayStatus("正在加载…");
 if(autoplay) toast("正在加载《"+dispTitle(song)+"》…");
 curLyrics=[]; lyricsLoading=true; renderLyrics();
@@ -466,22 +464,33 @@ $("fpBg").style.backgroundImage="none";
 renderPlayer(); updateMediaSession(song);
 logPlay(song,false);
 applyMeta(song);
-// 后台下载完整文件，好了就无缝切到本地（锁屏也能播）
-blobUrl(song).then(()=>trySwapToBlob(song)).catch(()=>{});
-if(playPromise && playPromise.then){
-  playPromise.then(()=>{ loading=false; setPlayStatus(""); hideToast(); prefetchNext(); ensureQueue(); })
-    .catch(e=>playFallback(song,e));
-}else if(autoplay){ loading=false; hideToast(); prefetchNext(); ensureQueue(); }
-else { loading=false; hideToast(); }
-// 切歌看门狗：45 秒还没真正播起来（NAS 通道半死不活卡住时），当失败处理自动跳下一首
+const mySeq=++playSeq;
+/* 下载看门狗：整曲 75 秒还没就绪（通道半死）就判失败跳下一首，别无限期干等（v9.28） */
 clearTimeout(stallTimer);
 if(autoplay){
-  stallTimer=setTimeout(()=>{
-    if(queue[qi]===song && !song._played && audio.currentTime===0 && !audio.ended){
-      handleSongFailed(song, {msg:"加载超时"});
-    }
-  }, 45000);
+  stallTimer=setTimeout(()=>{ if(playSeq===mySeq && queue[qi]===song && !song._played) handleSongFailed(song, {msg:"加载超时"}); }, 75000);
 }
+if(cached){
+  // 已有本地整曲（预取/重播）：立即播，零等待
+  audio.src=cached; song._swapped=true;
+  if(autoplay){ audio.play().then(()=>{ loading=false; setPlayStatus(""); hideToast(); prefetchNext(); ensureQueue(); }).catch(()=>{ loading=false; }); }
+  else loading=false;
+  return;
+}
+/* v9.28 主路改整曲优先：先把整曲下完再播。这条通道上流式频繁被饿死（abort/code=4），
+   整曲走 fetch 有重试、能等，播起来后零网络依赖；代价是第一首多等几秒，连播靠预取基本无感。 */
+blobUrl(song).then(async ou=>{
+  if(playSeq!==mySeq || queue[qi]!==song) return; // 已切走：下好的留缓存即可
+  audio.src=ou; song._swapped=true;
+  if(autoplay){
+    try{ await audio.play(); }catch(e){}
+    loading=false; setPlayStatus(""); hideToast();
+    prefetchNext(); ensureQueue();
+  } else loading=false;
+}).catch(e=>{
+  if(playSeq!==mySeq || queue[qi]!==song) return;
+  handleSongFailed(song, e);
+});
 }
 // 直链失败（如 SW 还没拿到凭据）→ 回退到 fetch+blob
 audio.addEventListener("error",()=>{
