@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.31 2026-10-27";
+const APP_VER = "v9.32 2026-10-28";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -556,9 +556,10 @@ prefixUrl(song, curPrefixCtl).then(async pu=>{
   blobUrl(song).then(ou=>{
     if(queue[qi]!==song || audio.src!==pu) return;
     const wasPlaying=!audio.paused && !audio.ended, ct=audio.currentTime||0;
+    const stalled=!song._played && (audio.currentTime||0)<0.05; // 首段被 error 卡死、根本没播起来过
     audio.src=ou; song._swapped=true;
     try{ audio.currentTime=ct; }catch(e){}
-    if(wasPlaying) audio.play().catch(()=>{});
+    if(wasPlaying || stalled) audio.play().catch(()=>{});
     if(prefixUrls[song.p]){ URL.revokeObjectURL(prefixUrls[song.p]); delete prefixUrls[song.p]; }
   }).catch(()=>{});
 }).catch(async e=>{
@@ -582,10 +583,8 @@ prefixUrl(song, curPrefixCtl).then(async pu=>{
 // 直链失败（如 SW 还没拿到凭据）→ 回退到 fetch+blob
 audio.addEventListener("error",()=>{
   diag("AERR", "code=" + (audio.error ? audio.error.code : "?") + " rs=" + audio.readyState);
-  const song=queue[qi];
-  if(song && !fbRetry && audio.readyState<2 && !audio.currentTime){
-    playFallback(song, new Error("audio error")); // v9.27：fbRetry 由 playFallback 自己置位，此前这里预置会把它自锁
-  }
+  // v9.32：只记录，不再召唤 playFallback。首段架构下恢复由主流程负责（首段失败→等整曲；换源瞬间
+  // 的过渡性 error 属正常现象），旧救援路一插手就会抢夺 <audio>，实测会把用户的暂停顶掉。
 });
 /* 一首歌彻底加载失败：自动跳下一首保住连播；连坏太多首（或队列只有一首）才停下报错 */
 function handleSongFailed(song, e, msg){
