@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.20 2026-10-27";
+const APP_VER = "v9.21 2026-10-27";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -310,6 +310,7 @@ let hist={};
 try{ hist=JSON.parse(localStorage.getItem(HIST_KEY)||"{}");}catch(e){ hist={};}
 function saveHist(){ try{localStorage.setItem(HIST_KEY,JSON.stringify(hist));}catch(e){}}
 function logPlay(song, completed){
+if(runMode) return; // 跑步模式：播放不计入历史/评价/推荐（v9.21 用户要求）
 const k=songKey(song), h=hist[k]||{c:0,l:0};
 h.c++; h.l=Date.now(); if(completed) h.done=(h.done||0)+1;
 hist[k]=h; saveHist();
@@ -751,7 +752,7 @@ const q=$("q").value.trim();
 const list=searchSongs(q);
 renderSongs($("searchList"), list, true);
 window.scrollTo(0,0);
-if(autoplay && list.length){ queue=list.slice(); playAt(0);}
+if(autoplay && list.length){ runMode=false; queue=list.slice(); playAt(0);}
 else if(autoplay){ $("voiceHint").textContent+="（曲库里没找到，换个说法试试）";}
 }
 
@@ -806,13 +807,13 @@ const b=document.createElement("button"); b.className="song";
 b.innerHTML=`<span class="idx">${i+1}</span><span class="tt"><b></b><span></span></span><span class="go">▶</span>`;
 b.querySelector("b").textContent=dispTitle(s);
 b.querySelector(".tt span").textContent=dispArtist(s)+" · "+(s.f||"");
-b.onclick=()=>{ if(asQueue){ queue=songs.slice();} playAt(asQueue?i:queueIndexOf(s));};
+b.onclick=()=>{ if(asQueue){ runMode=false; queue=songs.slice();} playAt(asQueue?i:queueIndexOf(s));};
 el.appendChild(b);
 });
 }
 function queueIndexOf(s){
 let i=queue.indexOf(s);
-if(i<0){ queue=queue.concat([s]); i=queue.length-1;}
+if(i<0){ runMode=false; queue=queue.concat([s]); i=queue.length-1;}
 return i;
 }
 function renderHome(){
@@ -837,7 +838,7 @@ b.innerHTML=`<div class="qq-card-bg" style="background:${gradFor(f.n)}"></div>
   <div class="qq-card-info"><b></b><span>${f.c} 首</span></div>`;
 b.querySelector("b").textContent=f.n;
 b.querySelector(".qq-play").onclick=e=>{ e.stopPropagation();
-  const ss=CATALOG.filter(s=>s.f===f.n); queue=ss.slice(); playAt(0); };
+  const ss=CATALOG.filter(s=>s.f===f.n); runMode=false; queue=ss.slice(); playAt(0); };
 b.onclick=()=>{ const ss=CATALOG.filter(s=>s.f===f.n);
 $("q").value=""; showView("view-search"); renderSongs($("searchList"),ss,true);
 window.scrollTo(0,0); toast("已载入《"+f.n+"》"+ss.length+"首，点一首开始播", "", 2500);};
@@ -1103,6 +1104,7 @@ function bindCloudFav(){
 // 播放记录：本地照记，登录后顺手上报云端
 const _logPlay = logPlay;
 logPlay = function(song, completed){
+  if(runMode) return; // 跑步模式：本地不记、云端也不上报
   _logPlay(song, completed);
   if(Cloud.loggedIn() && song && song.p) Cloud.postHistory(song.p);
 };
