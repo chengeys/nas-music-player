@@ -1,7 +1,18 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.42 2026-10-28";
+const APP_VER = "v9.43 2026-10-28";
+
+/* v9.43 换域名搬家：新地址带 #mv1=<base64> 打开时，先把旧地址带来的本地数据写入本域名（必须在读 cfg 前） */
+(function(){ try{
+  if(location.hash.indexOf("#mv1=")===0){
+    const d=JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(5)))));
+    const allow=["zmusic.cfg.v1","zmusic.fav.v1","zmusic.hist.v1","zmusic.cloud.token","zmusic.cloud.user"];
+    let n=0; for(const k of allow){ if(typeof d[k]==="string"){ localStorage.setItem(k,d[k]); n++; } }
+    history.replaceState(null,"",location.pathname+location.search);
+    if(n) sessionStorage.setItem("zmusic.mvmsg","1");
+  }
+}catch(e){} })();
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -12,6 +23,23 @@ catch(e){ return {dav:"https://nas.yjm.ccwu.cc/dav",user:"",pass:""};}
 }
 let cfg = loadCfg();
 function saveCfg(){ localStorage.setItem(CFG_KEY, JSON.stringify(cfg));}
+
+/* ---------- 主题（v9.43）：auto 跟随系统（系统可按日落自动切换）/ light / dark，存 cfg.theme ---------- */
+function effTheme(){
+  const t=cfg.theme||"auto";
+  if(t==="light"||t==="dark") return t;
+  return (window.matchMedia&&matchMedia("(prefers-color-scheme: light)").matches)?"light":"dark";
+}
+function applyTheme(){
+  const e=effTheme();
+  document.documentElement.classList.toggle("light", e==="light");
+  const m=document.querySelector('meta[name="theme-color"]');
+  if(m) m.setAttribute("content", e==="light"?"#f4f3ef":"#101014");
+  document.querySelectorAll("#themeRow button").forEach(b=>b.classList.toggle("on", b.dataset.theme===(cfg.theme||"auto")));
+}
+applyTheme();
+if(window.matchMedia){ const mq=matchMedia("(prefers-color-scheme: light)"); const onMq=()=>{ if((cfg.theme||"auto")==="auto") applyTheme(); };
+  if(mq.addEventListener) mq.addEventListener("change", onMq); }
 
 /* ---------- 工具 ---------- */
 function b64encodeUnicode(s){
@@ -33,7 +61,7 @@ function davHeaders(extra){
 /* 取歌通道：在 app.ipls.cn 域名下走本站 /dav 直达转发（经 Cloudflare 就近直达家里 NAS，
    不再绕香港那台服务器的反代）；其他域名仍用设置里填的地址。账号密码始终用设置里的 */
 function davBase(){
-if(location.hostname==="app.ipls.cn") return location.origin+"/dav";
+if(location.hostname==="app.ipls.cn"||location.hostname==="mp3.ipls.cn") return location.origin+"/dav";
 return cfg.dav.replace(/\/+$/,"");
 }
 function songUrl(song){
@@ -1107,7 +1135,7 @@ renderDetail(s);
 syncPlayBtns();
 }
 function syncPlayBtns(){
-const ic=audio.paused?"▶":"⏸";
+const ic=audio.paused?"▶":"⏸\uFE0E";
 $("miniToggle").textContent=ic; $("fpToggle").textContent=ic;
 const fp=$("fullPlayer"); if(fp) fp.classList.toggle("is-playing", !audio.paused); // v9.39 唱片旋转/唱针臂
 }
@@ -1220,6 +1248,23 @@ $("forceUpdate").onclick=async ()=>{
   location.replace(location.pathname + "?u=" + Date.now()); // 破 4 小时 HTTP 缓存：换 URL 取新版首页
 };
 $("appVer").textContent=APP_VER;
+/* v9.43 接线：主题三档 / 搬家 / 字形 / 进度条拖动变粗 */
+document.querySelectorAll("#themeRow button").forEach(b=>{ b.onclick=()=>{ cfg.theme=b.dataset.theme; saveCfg(); applyTheme(); toast(b.dataset.theme==="auto"?"外观：跟随系统":(b.dataset.theme==="light"?"外观：浅色":"外观：深色"),"ok",1800); }; });
+applyTheme();
+if(sessionStorage.getItem("zmusic.mvmsg")){ sessionStorage.removeItem("zmusic.mvmsg"); setTimeout(()=>toast("已从旧地址搬入：喜欢、设置与云歌单登录","ok",5000), 600); }
+const mvRow=$("mvRow"), mvHint=$("mvHint");
+if(location.hostname!=="app.ipls.cn"){ if(mvRow) mvRow.style.display="none"; if(mvHint) mvHint.style.display="none"; }
+else if($("mvBtn")){ $("mvBtn").onclick=()=>{
+  const keys=["zmusic.cfg.v1","zmusic.fav.v1","zmusic.hist.v1","zmusic.cloud.token","zmusic.cloud.user"];
+  const d={}; for(const k of keys){ const v=localStorage.getItem(k); if(v!=null) d[k]=v; }
+  location.href="https://mp3.ipls.cn/#mv1="+btoa(unescape(encodeURIComponent(JSON.stringify(d))));
+}; }
+$("fpPrev").textContent="⏮\uFE0E"; $("fpNext").textContent="⏭\uFE0E";
+$("miniPrev").textContent="⏮\uFE0E"; $("miniNext").textContent="⏭\uFE0E";
+const skEl=$("seek");
+if(skEl){ const on=()=>skEl.classList.add("seeking"), off=()=>skEl.classList.remove("seeking");
+  skEl.addEventListener("pointerdown",on); skEl.addEventListener("pointerup",off); skEl.addEventListener("pointercancel",off);
+  skEl.addEventListener("touchstart",on,{passive:true}); skEl.addEventListener("touchend",off); }
 try{ localStorage.removeItem(DIAG_KEY); }catch(e){} // v9.37：清掉旧诊断日志存档
 }
 

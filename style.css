@@ -144,7 +144,6 @@ label input{display:block;width:100%;margin-top:6px;background:var(--bg2);
 #fpArtist{color:var(--acc2);font-size:15px;}
 /* 播放页（v9.39 浅色唱片风：按用户给的参考视频改版——白卡唱机+旋转白唱片+唱针臂+浅色底） */
 #fullPlayer{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;
-  --fg:#1d1d1f;--muted:#8a8a8e;--acc:#31c27c;--bg:#f7f6f2;--bg2:#ffffff;--bg3:#eceef0;
   color:var(--fg);
   background:linear-gradient(180deg,#fdfdfb 0%,#f4f3ef 55%,#f9e9db 100%);
   overflow:hidden;padding:0;gap:0;align-items:stretch;justify-content:flex-start;}
@@ -219,9 +218,12 @@ label input{display:block;width:100%;margin-top:6px;background:var(--bg2);
 .fp-progress span{font-size:11px;color:var(--muted);min-width:36px;}
 .fp-progress span:last-child{text-align:right;}
 #seek{flex:1;height:28px;-webkit-appearance:none;appearance:none;background:transparent;cursor:pointer;}
-#seek::-webkit-slider-runnable-track{height:2px;background:rgba(0,0,0,.22);border-radius:2px;}
-#seek::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:13px;height:13px;border-radius:50%;background:#111;margin-top:-5.5px;box-shadow:0 1px 5px rgba(0,0,0,.35);}
-#seek::-moz-range-track{height:2px;background:rgba(0,0,0,.22);border-radius:2px;}
+#seek::-webkit-slider-runnable-track{height:2px;background:rgba(0,0,0,.22);border-radius:2px;transition:height .15s ease;}
+#seek::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:13px;height:13px;border-radius:50%;background:#111;margin-top:-5.5px;box-shadow:0 1px 5px rgba(0,0,0,.35);transition:width .15s ease,height .15s ease,margin-top .15s ease;}
+#seek.seeking::-webkit-slider-runnable-track{height:7px;}
+#seek.seeking::-webkit-slider-thumb{width:17px;height:17px;margin-top:-5px;}
+#seek::-moz-range-track{height:2px;background:rgba(0,0,0,.22);border-radius:2px;transition:height .15s ease;}
+#seek.seeking::-moz-range-track{height:7px;}
 #seek::-moz-range-thumb{width:13px;height:13px;border:none;border-radius:50%;background:#111;box-shadow:0 1px 5px rgba(0,0,0,.35);}
 #fpControls{display:flex;align-items:center;justify-content:center;gap:16px;
   margin:8px 0 4px;}
@@ -267,3 +269,45 @@ body.car #topbar #logo{font-size:22px;}
 .modal-card label{display:block;margin-bottom:12px;font-size:14px;color:var(--muted);}
 .modal-card input{width:100%;margin-top:6px;}
 #loginModal .row .btn,#addToPlaylistModal .row .btn{flex:1;}
+
+/* ================= v9.43 主题：浅色（html.light） ================= */
+html.light{
+  --bg:#f4f3ef; --bg2:#ffffff; --bg3:#e9e7e0;
+  --fg:#1d1d1f; --muted:#86868c; --acc:#31c27c; --acc2:#159a5c;
+}
+html.light #topbar{background:rgba(250,249,246,.92);}
+html.light #tabbar{background:rgba(250,249,246,.96);border-top-color:#e3e1d9;}
+html.light #miniPlayer{background:rgba(255,255,255,.97);border-top-color:#e3e1d9;
+  box-shadow:0 -6px 24px rgba(90,80,60,.14);}
+html.light #miniPlayer button{background:#eceae3;}
+html.light #miniPlayer button:active{background:#ddd9cd;}
+html.light #miniPlayer button.primary{background:var(--acc);}
+html.light #miniCover{background:#e9e7e0;}
+html.light #miniProg::before{background:#ddd9cd;}
+html.light #toast{background:#ffffff;border-color:#e2e0d8;box-shadow:0 4px 20px rgba(90,80,60,.18);}
+html.light .more-btn{border-color:#dddacd;}
+html.light .more-btn:active{background:#eceae3;}
+.btn.ghost.on{background:var(--acc);color:#fff;}
+
+/* ============ v9.43 播放页深色（默认主题，未加 .light 时） ============ */
+html:not(.light) #fullPlayer{background:linear-gradient(180deg,#1c1c24 0%,#121218 55%,#171310 100%);}
+html:not(.light) .fp-head button{color:#f2f2f5;}
+html:not(.light) #fpTab{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.20)!important;color:#f2f2f5;}
+html:not(.light) .fp-cover-wrap{background:#22222c;box-shadow:0 24px 60px rgba(0,0,0,.55),0 4px 16px rgba(0,0,0,.4);}
+html:not(.light) .fp-disc{background:radial-gradient(circle,#2b2b34 0 57%,#1d1d24 58% 100%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06),inset 0 2px 12px rgba(0,0,0,.5),0 12px 32px rgba(0,0,0,.5);}
+html:not(.light) .fp-disc::before{background:repeating-radial-gradient(circle,rgba(255,255,255,.055) 0 1px,transparent 1px 5px);}
+html:not(.light) .fp-disc::after{background:conic-gradient(from 215deg,transparent 0 42%,rgba(255,255,255,.10) 50%,transparent 58% 100%);}
+html:not(.light) #fpCoverPh{background:linear-gradient(135deg,#33333e,#26262e);color:#6d6d7a;}
+html:not(.light) .fp-disc-hole{background:#101014;box-shadow:inset 0 1px 4px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.10);}
+html:not(.light) #fpCurLine{color:#c6c6cf;}
+html:not(.light) .fp-actions button{color:#c9c9d2;}
+html:not(.light) .lrc-line{color:#7d7d8c;}
+html:not(.light) .lrc-line.passed{color:#4c4c58;}
+html:not(.light) #seek::-webkit-slider-runnable-track{background:rgba(255,255,255,.25);}
+html:not(.light) #seek::-moz-range-track{background:rgba(255,255,255,.25);}
+html:not(.light) #seek::-webkit-slider-thumb{background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.5);}
+html:not(.light) #seek::-moz-range-thumb{background:#fff;}
+html:not(.light) #fpControls button{color:#f2f2f5;}
+html:not(.light) #fpControls button:active{background:rgba(255,255,255,.08);}
+html:not(.light) #fpControls .big{background:#fff;color:#111;box-shadow:0 10px 26px rgba(0,0,0,.5);}

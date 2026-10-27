@@ -2,7 +2,7 @@
 "use strict";
 const Cloud = (()=>{
 // app.ipls.cn 域名下走本站 /api/ 同源转发（music-api 的 CORS 只放行老域名，直连会被浏览器拦）
-const BASE = location.hostname === "app.ipls.cn" ? "" : "https://music-api.ipls.cn";
+const BASE = (location.hostname === "app.ipls.cn" || location.hostname === "mp3.ipls.cn") ? "" : "https://music-api.ipls.cn";
 const TKEY = "zmusic.cloud.token", UKEY = "zmusic.cloud.user";
 
 function getToken(){ try{ return localStorage.getItem(TKEY) || ""; }catch(e){ return ""; } }

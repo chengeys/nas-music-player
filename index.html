@@ -7,11 +7,15 @@
 <meta name="theme-color" content="#14141a">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<script>/* v9.43 首屏防闪：JS 主程序加载前先按存储的主题/系统外观定底色（与 app.js applyTheme 同规则） */
+try{var _tc=JSON.parse(localStorage.getItem("zmusic.cfg.v1")||"{}").theme||"auto";
+var _tl=_tc==="light"||(_tc==="auto"&&matchMedia("(prefers-color-scheme: light)").matches);
+if(_tl){document.documentElement.classList.add("light");document.querySelector('meta[name="theme-color"]').setAttribute("content","#f4f3ef");}}catch(e){}</script>
 <meta name="apple-mobile-web-app-title" content="知行音乐">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon.svg">
-<link rel="stylesheet" href="style.css?v=9.42">
+<link rel="stylesheet" href="style.css?v=9.43">
 </head>
 <body>
 <div id="app">
@@ -89,6 +93,15 @@
       </div>
     </div>
     <div class="block">
+      <h2>外观</h2>
+      <div class="row" id="themeRow">
+        <button class="btn ghost" data-theme="auto">跟随系统</button>
+        <button class="btn ghost" data-theme="light">浅色</button>
+        <button class="btn ghost" data-theme="dark">深色</button>
+      </div>
+      <p class="hint">跟随系统：手机开深色模式就是黑的、关了就是浅的；如果系统里把深色模式设成"日落到日出"自动，就会白天浅、晚上黑。也可以在这里固定一种。</p>
+    </div>
+    <div class="block">
       <h2>数据</h2>
       <div class="row">
         <button id="clearHist" class="btn ghost danger">清除播放记录</button>
@@ -96,6 +109,10 @@
       <div class="row" style="margin-top:10px">
         <button id="forceUpdate" class="btn ghost">🔄 强制更新到最新版</button>
       </div>
+      <div class="row" style="margin-top:10px" id="mvRow">
+        <button id="mvBtn" class="btn ghost">📦 把数据搬到新地址 mp3.ipls.cn</button>
+      </div>
+      <p class="hint" id="mvHint">播放器新地址是 mp3.ipls.cn。换地址后，本机存的喜欢、设置和云歌单登录不会自动跟过去——在这个旧地址点上面的按钮，一次搬过去（云歌单本身存在服务器上，不用搬）。</p>
       <p class="hint">曲库共 <span id="libCount">-</span> 首 · <span id="appVer"></span></p>
     </div>
   </section>
@@ -215,7 +232,7 @@
 </div>
 
 <script src="catalog.js"></script>
-<script src="cloud.js?v=9.42"></script>
-<script src="app.js?v=9.42"></script>
+<script src="cloud.js?v=9.43"></script>
+<script src="app.js?v=9.43"></script>
 </body>
 </html>
