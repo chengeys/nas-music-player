@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.35 2026-10-28";
+const APP_VER = "v9.36 2026-10-28";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -564,6 +564,13 @@ prefixUrl(song, curPrefixCtl).then(async pu=>{
     audio.src=ou; song._swapped=true;
     try{ audio.currentTime=ct; }catch(e){}
     if(wasPlaying || stalled) audio.play().catch(()=>{});
+    else if(pauseGen>pgAtReq){
+      // v9.36：用户在下载等待期按过暂停——元素若处于错误/待定位状态，换源后浏览器会自行恢复播放
+      // （test27 实证：全程无任何 play() 调用却自己响了）。在 canplay 后与 800ms 兜底各补一记 pause 压住。
+      const stomp=()=>{ if(queue[qi]===song && !audio.paused && pauseGen>pgAtReq) audio.pause(); };
+      audio.addEventListener("canplay", function h(){ audio.removeEventListener("canplay",h); setTimeout(stomp,50); });
+      setTimeout(stomp, 800);
+    }
     if(prefixUrls[song.p]){ URL.revokeObjectURL(prefixUrls[song.p]); delete prefixUrls[song.p]; }
   }).catch(()=>{});
 }).catch(async e=>{
