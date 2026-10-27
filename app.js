@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.43 2026-10-28";
+const APP_VER = "v9.44 2026-10-28";
 
 /* v9.43 换域名搬家：新地址带 #mv1=<base64> 打开时，先把旧地址带来的本地数据写入本域名（必须在读 cfg 前） */
 (function(){ try{
@@ -80,7 +80,7 @@ return m+":"+String(s).padStart(2,"0");
 }
 let toastTimer=null;
 function toast(msg, cls="", ms=4000){
-const el=$("toast"); el.textContent=msg; el.className=cls; el.style.display="block";
+const el=$("toast"); el.textContent=msg; el.className=cls; el.style.display="flex"; // v9.44：毛玻璃药丸用 flex 排版（转圈 ::before）
 clearTimeout(toastTimer);
 if(ms>0) toastTimer=setTimeout(()=>{ el.style.display="none"; }, ms);
 }
@@ -441,7 +441,7 @@ const r=await fetch(url,{headers:davHeaders(), signal:ctl.signal});
 if(r.status===401) throw {code:401,msg:"账号或密码不对（401），去设置页检查"};
 if(r.status===502||r.status===503||r.status===504){
   lastErr={code:r.status,msg:"NAS 返回 "+r.status};
-  toast("网络抖动，正在重试…("+(attempt+1)+"/2)");
+  toast("网络抖动，正在重试…("+(attempt+1)+"/2)","loading",2500);
   await new Promise(r2=>setTimeout(r2,1500)); continue;
 }
 if(!r.ok) throw {code:r.status,msg:"NAS 返回 "+r.status};
@@ -583,7 +583,7 @@ try{ pushAuthToSW(); }catch(e){} // 每次播放前把 NAS 凭据再推给 SW（
 const cached=objCache[song.p];
 audioPlaying=false;
 loading=true; setPlayStatus("正在加载…");
-if(autoplay) toast("正在加载《"+dispTitle(song)+"》…");
+if(autoplay) toast("正在加载《"+dispTitle(song)+"》…","loading",0);
 curLyrics=[]; lyricsLoading=true; renderLyrics();
 curCoverUrl="";
 $("miniCover").classList.add("hide");
@@ -693,7 +693,7 @@ async function playFallback(song, origErr){
   diag("FALLBACK", (origErr && (origErr.message || origErr.msg)) || "");
   if(queue[qi]!==song) return;
   if(fbRetry) return; fbRetry=true; // 同一首只回退一次：error 事件与 play() 拒绝两条路此前会各跑一遍、互相打断（v9.13）
-  toast("正在加载《"+dispTitle(song)+"》…");
+  toast("正在加载《"+dispTitle(song)+"》…","loading",0);
   try{
     audio.src=await blobUrl(song);
     await audio.play();

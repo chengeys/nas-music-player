@@ -11,9 +11,18 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);
 button{font-family:inherit;}
 
 /* 顶部提示条 */
-#toast{position:fixed;top:calc(8px + env(safe-area-inset-top));left:16px;right:16px;z-index:100;
-  background:#2a2a38;border:1px solid #3d3d52;color:var(--fg);border-radius:12px;
-  padding:12px 16px;font-size:14px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.5);}
+/* v9.44 提示条：毛玻璃药丸，融进页面（原为黑方块，用户点名要改） */
+#toast{position:fixed;top:calc(10px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:100;
+  width:max-content;max-width:calc(100vw - 48px);
+  align-items:center;justify-content:center;gap:8px;
+  background:rgba(32,32,42,.80);border:1px solid rgba(255,255,255,.14);color:var(--fg);
+  backdrop-filter:blur(16px) saturate(1.4);-webkit-backdrop-filter:blur(16px) saturate(1.4);
+  border-radius:999px;padding:10px 18px;font-size:13.5px;text-align:center;
+  box-shadow:0 10px 32px rgba(0,0,0,.35);animation:toastIn .25s ease;}
+@keyframes toastIn{from{opacity:0;margin-top:-6px;}to{opacity:1;margin-top:0;}}
+#toast.loading::before{content:"";width:13px;height:13px;flex:none;border-radius:50%;
+  border:2px solid rgba(140,140,155,.35);border-top-color:var(--acc);animation:toastSpin .7s linear infinite;}
+@keyframes toastSpin{to{transform:rotate(360deg);}}
 #toast.err{border-color:var(--danger);color:#ffb3b3;}
 #toast.ok{border-color:#4ade80;color:#b3f0c8;}
 
@@ -284,7 +293,7 @@ html.light #miniPlayer button:active{background:#ddd9cd;}
 html.light #miniPlayer button.primary{background:var(--acc);}
 html.light #miniCover{background:#e9e7e0;}
 html.light #miniProg::before{background:#ddd9cd;}
-html.light #toast{background:#ffffff;border-color:#e2e0d8;box-shadow:0 4px 20px rgba(90,80,60,.18);}
+html.light #toast{background:rgba(255,255,255,.85);border-color:rgba(0,0,0,.07);box-shadow:0 10px 32px rgba(90,80,60,.18);}
 html.light .more-btn{border-color:#dddacd;}
 html.light .more-btn:active{background:#eceae3;}
 .btn.ghost.on{background:var(--acc);color:#fff;}
