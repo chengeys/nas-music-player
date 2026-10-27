@@ -187,8 +187,8 @@ label input{display:block;width:100%;margin-top:6px;background:var(--bg2);
   transform:translate(-50%,-50%);border-radius:50%;background:#c9ccd2;}
 .fp-arm{position:absolute;top:-4%;right:-2%;height:92%;z-index:3;pointer-events:none;
   filter:drop-shadow(0 6px 8px rgba(0,0,0,.18));
-  transform-origin:82.5% 7.6%;transition:transform .8s cubic-bezier(.4,0,.2,1);}
-#fullPlayer.is-playing .fp-arm{transform:rotate(-27deg);}
+  transform-origin:82.5% 7.6%;transition:transform .8s cubic-bezier(.4,0,.2,1);overflow:visible;}
+#fullPlayer.is-playing .fp-arm{transform:rotate(22deg);}
 /* 唱片视图的大标题与当前歌词行 */
 #fpDiscMeta{display:none;width:100%;box-sizing:border-box;padding:8px 24px 0;}
 #fullPlayer[data-view="disc"] #fpDiscMeta{display:block;}
