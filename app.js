@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.28 2026-10-27";
+const APP_VER = "v9.29 2026-10-27";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -350,9 +350,29 @@ audio.preload="auto";
 let queue=[], qi=-1, objCache={}, blobCache={}, loading=false;
 
 const blobInflight={};
-let dlChain=Promise.resolve();
-/* 全局串行闸（v9.28）：任何时刻只允许一首整曲在下载——当前歌、预取、回退全走这道闸，窄通道不内耗 */
-function dlGate(song){ const job=dlChain.then(()=>blobDownload(song), ()=>blobDownload(song)); dlChain=job.then(()=>{},()=>{}); return job; }
+/* 下载闸（v9.29 改优先级抢占）：任何时刻只下一首整曲；新点播到达时——
+   排队中的旧任务直接作废，正在下的若不是这首歌立刻中止让路。
+   （v9.28 的纯串行队列会让连点下一首时每首排队挨个下，新点的歌半天轮不上、还在放原来的——用户实测。） */
+let dlRunning=null, dlQueued=null;
+function dlGate(song){
+  return new Promise((resolve, reject)=>{
+    const job={song, resolve, reject, ctl:new AbortController()};
+    if(dlQueued){ dlQueued.reject({code:0, msg:"已被新点播取代", superseded:true}); dlQueued=null; }
+    if(dlRunning){
+      dlQueued=job;
+      if(dlRunning.song.p!==song.p) dlRunning.ctl.abort(); // 正在下的不是这首：掐掉让路
+    } else runDl(job);
+  });
+}
+async function runDl(job){
+  dlRunning=job;
+  try{ job.resolve(await blobDownload(job.song, job.ctl)); }
+  catch(e){ job.reject(e); }
+  finally{
+    if(dlRunning===job) dlRunning=null;
+    if(dlQueued){ const nx=dlQueued; dlQueued=null; runDl(nx); }
+  }
+}
 async function blobUrl(song){
 if(objCache[song.p]) return objCache[song.p];
 if(blobInflight[song.p]) return blobInflight[song.p]; // 在途去重（v9.27）：别把同一首歌下两遍
@@ -360,11 +380,13 @@ const job=dlGate(song);
 blobInflight[song.p]=job;
 try{ return await job; } finally{ delete blobInflight[song.p]; }
 }
-async function blobDownload(song){
+async function blobDownload(song, extCtl){
+if(extCtl && extCtl.signal.aborted) throw {code:0, msg:"已取消", superseded:true};
 const url=songUrl(song);
 let lastErr=null;
 for(let attempt=0;attempt<2;attempt++){
 const ctl=new AbortController(); const dlT=setTimeout(()=>ctl.abort(), 40000); // 单次 40 秒死线（v9.28）：细流假死的连接不能无限期占通道
+const onExt=()=>ctl.abort(); if(extCtl) extCtl.signal.addEventListener("abort", onExt, {once:true});
 try{
 const r=await fetch(url,{headers:davHeaders(), signal:ctl.signal});
 if(r.status===401) throw {code:401,msg:"账号或密码不对（401），去设置页检查"};
@@ -384,9 +406,10 @@ URL.revokeObjectURL(objCache[old]); delete objCache[old]; delete blobCache[old];
 return ou;
 }catch(e){
 if(e&&e.code===401) throw e;
+if(extCtl && extCtl.signal.aborted) throw {code:0, msg:"已取消", superseded:true}; // 被新点播取代：立即停，不重试
 if(e instanceof TypeError || (e&&e.name==="AbortError")){ lastErr={code:0,msg:"下载超时或网络中断"}; await new Promise(r2=>setTimeout(r2,1500)); continue; }
 throw e;
-}finally{ clearTimeout(dlT); }
+}finally{ clearTimeout(dlT); if(extCtl) extCtl.signal.removeEventListener("abort", onExt); }
 }
 throw lastErr||{code:0,msg:"重试后仍失败"};
 }
@@ -488,6 +511,7 @@ blobUrl(song).then(async ou=>{
     prefetchNext(); ensureQueue();
   } else loading=false;
 }).catch(e=>{
+  if(e && e.superseded) return; // 已被更新的点播取代，静默作废
   if(playSeq!==mySeq || queue[qi]!==song) return;
   handleSongFailed(song, e);
 });
