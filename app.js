@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.17 2026-10-27";
+const APP_VER = "v9.18 2026-10-27";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -849,6 +849,29 @@ $("qqStats").textContent=`${CATALOG.length} 首歌曲 · ${fc} 个合集`;
 const hr=new Date().getHours();
 $("qqGreet").textContent=hr<6?"夜深了":hr<12?"上午好":hr<14?"中午好":hr<18?"下午好":"晚上好";
 }
+/* 当前播放列表面板：看全部队列，点任意一首跳过去 */
+function renderQueue(){
+  const el=$("fpQueueList"); if(!el) return;
+  $("fpQueueTitle").textContent="播放列表（共 "+queue.length+" 首）";
+  el.innerHTML="";
+  if(!queue.length){ el.innerHTML='<p class="empty">队列是空的</p>'; return; }
+  queue.forEach((s,i)=>{
+    const b=document.createElement("div");
+    b.className="song"+(i===qi?" cur":"");
+    b.innerHTML=`<span class="idx">${i===qi?"▶":i+1}</span><span class="tt"><b></b><span></span></span>`;
+    b.querySelector("b").textContent=dispTitle(s);
+    b.querySelector(".tt span").textContent=dispArtist(s)+" · "+(s.f||"");
+    b.onclick=()=>{ playAt(i); };
+    el.appendChild(b);
+  });
+  const cur=el.children[qi];
+  if(cur) cur.scrollIntoView({block:"center"});
+}
+function showQueuePanel(show){
+  $("fpQueue").style.display=show?"block":"none";
+  $("fpLyrics").style.display=show?"none":"block";
+  if(show){ $("fpDetail").style.display="none"; $("fpTab").textContent="详情"; renderQueue(); }
+}
 function renderPlayer(){
 const s=queue[qi]; if(!s) return;
 if($("fpQueue") && $("fpQueue").style.display!=="none") renderQueue();
@@ -967,29 +990,6 @@ $("fpMode").onclick=()=>{
   $("fpMode").textContent=repeatOne?"🔂":"🔁";
   toast(repeatOne?"单曲循环":"列表循环","",1500);
 };
-/* 当前播放列表面板：看全部队列，点任意一首跳过去 */
-function renderQueue(){
-  const el=$("fpQueueList"); if(!el) return;
-  $("fpQueueTitle").textContent="播放列表（共 "+queue.length+" 首）";
-  el.innerHTML="";
-  if(!queue.length){ el.innerHTML='<p class="empty">队列是空的</p>'; return; }
-  queue.forEach((s,i)=>{
-    const b=document.createElement("div");
-    b.className="song"+(i===qi?" cur":"");
-    b.innerHTML=`<span class="idx">${i===qi?"▶":i+1}</span><span class="tt"><b></b><span></span></span>`;
-    b.querySelector("b").textContent=dispTitle(s);
-    b.querySelector(".tt span").textContent=dispArtist(s)+" · "+(s.f||"");
-    b.onclick=()=>{ playAt(i); };
-    el.appendChild(b);
-  });
-  const cur=el.children[qi];
-  if(cur) cur.scrollIntoView({block:"center"});
-}
-function showQueuePanel(show){
-  $("fpQueue").style.display=show?"block":"none";
-  $("fpLyrics").style.display=show?"none":"block";
-  if(show){ $("fpDetail").style.display="none"; $("fpTab").textContent="详情"; renderQueue(); }
-}
 $("fpList").onclick=()=>{
   showQueuePanel($("fpQueue").style.display==="none");
 };
