@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.26 2026-10-27";
+const APP_VER = "v9.27 2026-10-27";
 
 /* ---------- 配置 ---------- */
 const CFG_KEY = "zmusic.cfg.v1";
@@ -349,8 +349,15 @@ audio.autoplay=true; // 换源后自动播，iOS 当连续播放处理
 audio.preload="auto";
 let queue=[], qi=-1, objCache={}, blobCache={}, loading=false;
 
+const blobInflight={};
 async function blobUrl(song){
 if(objCache[song.p]) return objCache[song.p];
+if(blobInflight[song.p]) return blobInflight[song.p]; // 在途去重（v9.27）：别把同一首歌下两遍
+const job=blobDownload(song);
+blobInflight[song.p]=job;
+try{ return await job; } finally{ delete blobInflight[song.p]; }
+}
+async function blobDownload(song){
 const url=songUrl(song);
 let lastErr=null;
 for(let attempt=0;attempt<3;attempt++){
@@ -366,7 +373,7 @@ if(!r.ok) throw {code:r.status,msg:"NAS 返回 "+r.status};
 const blob=await r.blob();
 const ou=URL.createObjectURL(blob);
 objCache[song.p]=ou; blobCache[song.p]=blob;
-if(Object.keys(objCache).length>8){
+if(Object.keys(objCache).length>5){
 const old=Object.keys(objCache)[0];
 URL.revokeObjectURL(objCache[old]); delete objCache[old]; delete blobCache[old];
 }
@@ -419,8 +426,15 @@ function prefetchNext(){
   const n=queue[(qi+1)%queue.length];
   if(n && n!==queue[qi] && !n._prefetching){
     n._prefetching=true;
-    blobUrl(n).catch(()=>{}).finally(()=>{ n._prefetching=false; });
-    getSongMeta(n).catch(()=>{});
+    const start=()=>{
+      if(queue[(qi+1)%queue.length]!==n){ n._prefetching=false; return; }
+      blobUrl(n).catch(()=>{}).finally(()=>{ n._prefetching=false; });
+      getSongMeta(n).catch(()=>{});
+    };
+    /* 串行化（v9.27）：当前歌整曲还在下载时，预取排队等它下完——窄通道上两首整曲并发会互相堵死 */
+    const cur=queue[qi];
+    if(cur && blobInflight[cur.p]) blobInflight[cur.p].then(start, start);
+    else start();
   }
 }
 document.addEventListener("visibilitychange",()=>{
@@ -474,7 +488,7 @@ audio.addEventListener("error",()=>{
   diag("AERR", "code=" + (audio.error ? audio.error.code : "?") + " rs=" + audio.readyState);
   const song=queue[qi];
   if(song && !fbRetry && audio.readyState<2 && !audio.currentTime){
-    fbRetry=true; playFallback(song, new Error("audio error"));
+    playFallback(song, new Error("audio error")); // v9.27：fbRetry 由 playFallback 自己置位，此前这里预置会把它自锁
   }
 });
 /* 一首歌彻底加载失败：自动跳下一首保住连播；连坏太多首（或队列只有一首）才停下报错 */
