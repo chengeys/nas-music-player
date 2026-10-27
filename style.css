@@ -187,14 +187,16 @@ label input{display:block;width:100%;margin-top:6px;background:var(--bg2);
 .fp-progress span{font-size:11px;color:var(--muted);min-width:36px;}
 .fp-progress span:last-child{text-align:right;}
 #seek{flex:1;accent-color:var(--acc);height:28px;}
-#fpControls{display:flex;align-items:center;justify-content:center;gap:30px;
+#fpControls{display:flex;align-items:center;justify-content:center;gap:16px;
   margin:8px 0 4px;}
 #fpControls button{background:none;border:none;color:var(--fg);font-size:24px;
-  width:56px;height:56px;border-radius:50%;}
+  width:50px;height:50px;border-radius:50%;}
 #fpControls button:active{background:rgba(255,255,255,.08);}
-#fpControls .big{font-size:30px;width:76px;height:76px;background:var(--acc);color:#fff;
+#fpControls .big{font-size:30px;width:70px;height:70px;background:var(--acc);color:#fff;
   box-shadow:0 6px 20px rgba(49,194,124,.4);}
-#fpMode,#fpList{font-size:20px!important;color:var(--muted)!important;}
+#fpMode{font-size:22px!important;color:var(--fg)!important;}
+#fpList{font-size:24px!important;color:var(--fg)!important;position:relative;}
+#fpList::after{content:"列表";position:absolute;left:0;right:0;bottom:1px;font-size:9px;color:var(--muted);letter-spacing:2px;}
 #playStatus{text-align:center;min-height:20px;padding:0 20px 8px;}
 
 /* 底部导航 */
