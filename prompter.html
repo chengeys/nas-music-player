@@ -14,6 +14,10 @@
   #cam.srcHidden { display:block !important; opacity:0; width:4px; height:4px; inset:auto; left:0; top:0; pointer-events:none; }
   #beautyPanel { display:none; flex-direction:column; }
   #beautyPanel.open { display:flex; }
+  #cameraTools { display:none; flex-direction:column; }
+  #cameraTools.open { display:flex; }
+  body.pure-mode .cameraOnly { display:none !important; }
+  body.pure-mode #promptWrap { top:9%; height:64%; }
   .fbtn.on { background:#31c27c; color:#04240f; font-weight:700; }
   #shade { position:fixed; inset:0; background:linear-gradient(180deg, rgba(0,0,0,.55) 0%, rgba(0,0,0,.25) 30%, rgba(0,0,0,0) 55%, rgba(0,0,0,.45) 100%); pointer-events:none; }
   #promptWrap { position:fixed; left:0; right:0; top:6%; height:44%; overflow:hidden; pointer-events:none;
@@ -77,9 +81,9 @@
 <button id="btnPlay" class="on">▶ 开始读</button>
 <button id="btnTop">↺ 开头</button>
 </div>
-<button id="btnRec"><i></i></button>
+<button id="btnRec" class="cameraOnly"><i></i></button>
 <div class="grp">
-<button id="btnMirror" class="on">镜像</button>
+<button id="btnMirror" class="cameraOnly on">镜像</button>
 <button id="btnPure">纯提词</button>
 </div>
 </div>
@@ -87,6 +91,11 @@
 <div class="grp"><span class="lbl">速度</span><input id="speed" type="range" min="10" max="90" value="34"><span class="lbl" id="speedVal"></span></div>
 <div class="grp"><span class="lbl">字号</span><input id="font" type="range" min="22" max="44" value="30"><span class="lbl" id="fontVal"></span></div>
 </div>
+<div class="row cameraOnly">
+<span class="lbl">录像模式的辅助设置</span>
+<button id="btnCamTools">画面设置（美颜 / 滤镜）</button>
+</div>
+<div id="cameraTools">
 <div class="row">
 <div class="grp"><button id="btnBeauty">✨ 美颜</button><span class="lbl" id="beautyState">关</span></div>
 <div class="grp">
@@ -103,6 +112,7 @@
 <div class="grp"><button id="btnPeek">按住看原图</button></div>
 </div>
 <div class="row"><span style="font-size:11px;opacity:.55">美颜引擎 A档 v2</span></div>
+</div>
 </div>
 </div>
 
@@ -128,10 +138,10 @@
 </div>
 
 <div id="startGate">
-<h1>🏃 口播提词器</h1>
-<p>边跑边录普法口播：台词就贴在镜头旁边自动往上滚，照着读就行。点下面按钮开启摄像头和麦克风（只在本机使用，不上传任何画面）。</p>
-<button id="btnStart" class="primary">开启摄像头，开始</button>
-<button id="btnStartPure">不开摄像头，纯提词</button>
+<h1>口播提词器</h1>
+<p>这是一个提词器：先选稿、调速度，文字会自动滚动并高亮当前句。默认不开摄像头；需要一边读一边录像时，再进入录像模式。美颜只是录像里的可选辅助，默认关闭。</p>
+<button id="btnStartPure" class="primary">开始提词（不开摄像头）</button>
+<button id="btnStart">边提词边录像（开摄像头）</button>
 </div>
 <div id="toast"></div>
 <script>
@@ -209,14 +219,30 @@ document.querySelectorAll("#prompt .line").forEach(el=>el.style.fontSize=$("font
 $("speed").oninput=updSpeed; $("font").oninput=updFont;
 $("btnMirror").onclick=e=>{ $("cam").classList.toggle("mirror"); $("view").classList.toggle("mirror"); e.target.classList.toggle("on");};
 let pureOn=false;
+function layoutPrompt(){
+const box=$("prompt"); if(!box.children.length) return;
+const focusY=$("promptWrap").offsetHeight*0.42;
+box.style.paddingTop=focusY+"px";
+box.style.paddingBottom=($("promptWrap").offsetHeight-focusY+80)+"px";
+applyOffset(true);
+}
 function applyPure(){
+document.body.classList.toggle("pure-mode",pureOn);
 if(pureOn || !beautyOn){ $("cam").classList.remove("srcHidden"); $("cam").style.display=pureOn?"none":"block"; }
 else { $("cam").style.display="block"; $("cam").classList.add("srcHidden"); }
 $("view").style.display=pureOn?"none":(beautyOn?"block":"none");
 $("shade").style.display=pureOn?"none":"block";
 $("btnPure").classList.toggle("on",pureOn);
+requestAnimationFrame(layoutPrompt);
 }
-$("btnPure").onclick=()=>{ pureOn=!pureOn; applyPure(); toast(pureOn?"纯提词模式：黑底大字":"已显示镜头");};
+$("btnPure").onclick=async()=>{
+if(pureOn && !stream){
+  const ok=await startCam();
+  if(!ok){ toast("摄像头没打开，请允许权限后重试",3200); return; }
+}
+pureOn=!pureOn; applyPure(); toast(pureOn?"纯提词模式：大字滚动，不开摄像头":"录像模式：提词文字叠在镜头上");
+};
+$("btnCamTools").onclick=()=>{ $("cameraTools").classList.toggle("open"); };
 
 /* 编辑器 */
 $("btnEdit").onclick=()=>{ pausePlay(); $("editor").value=localStorage.getItem(LS_KEY)||SAMPLE; $("editorPanel").classList.add("open");};
@@ -242,7 +268,8 @@ return true;
 async function keepAwake(){ try{ wakeLock=await navigator.wakeLock.request("screen");}catch(e){}}
 $("btnStart").onclick=async()=>{
 const ok=await startCam();
-if(!ok){ toast("摄像头没打开，请允许权限，或用纯提词",3200);}
+pureOn=!ok; applyPure();
+if(!ok){ toast("摄像头没打开，已进入纯提词模式",3200);}
 $("startGate").style.display="none"; keepAwake();
 };
 $("btnStartPure").onclick=()=>{ pureOn=true; applyPure(); $("startGate").style.display="none"; keepAwake();};
