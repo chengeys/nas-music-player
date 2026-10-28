@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.54 2026-10-28";
+const APP_VER = "v9.55 2026-10-28";
 
 /* v9.43 换域名搬家：新地址带 #mv1=<base64> 打开时，先把旧地址带来的本地数据写入本域名（必须在读 cfg 前） */
 (function(){ try{
@@ -669,7 +669,7 @@ function stage2(song, pu){
     // v9.54 矫正重下：src 刚换就下达的 seek 偶被 WebKit 丢掉（流从 0 开播＝"开头重复"）。
     // 元数据到位时核对实际位置，偏离目标 >0.7 秒就补下一次——落位正常时是空操作，不必干等元数据才出声。
     audio.addEventListener("loadedmetadata", function hmS2(){ audio.removeEventListener("loadedmetadata",hmS2);
-      if(queue[qi]===song && song._onStream && Math.abs((audio.currentTime||0)-ct)>0.7){ try{ audio.currentTime=ct; }catch(e){} } });
+      if(queue[qi]===song && song._onStream && (audio.currentTime||0)<1.5 && ct-(audio.currentTime||0)>0.7){ try{ audio.currentTime=ct; }catch(e){} } }); // v9.55：只治"seek 被丢、从 0 起播"的签名；其间被拖动过的位置（读数≥1.5）不许拽回
     if(prefixUrls[song.p]){ URL.revokeObjectURL(prefixUrls[song.p]); delete prefixUrls[song.p]; }
     setTimeout(()=>{ if(queue[qi]===song && song._onStream && audio.readyState<2 && audio.networkState!==2){ song._onStream=false; swapToBlob(song, pgAtReq, uplAtReq, 0, intentPlay); } }, 5000);
     audio.addEventListener("error", function h(){ audio.removeEventListener("error",h); if(queue[qi]===song && song._onStream){ song._onStream=false; swapToBlob(song, pgAtReq, uplAtReq, 0, intentPlay); } });
@@ -749,7 +749,7 @@ prefixUrl(song, curPrefixCtl).then(async pu=>{
   if(autoplay){
     try{ await audio.play(); }catch(e){ if(e&&e.name==="NotAllowedError") _resumeOnTap=true; }
     loading=false; setPlayStatus(""); hideToast();
-    prefetchNext(); ensureQueue();
+    setTimeout(()=>{ if(queue[qi]===song) prefetchNext(); }, 6000); ensureQueue(); // v9.55：预取让行 6 秒（慢管道先紧着当前歌换流）
   } else loading=false;
   if(objCache[song.p] && objCache[song.p]===pu){ song._swapped=true; song._onPrefix=false; return; } // 首段即整曲（小文件）
   stage2(song, pu); // v9.50：换直链流（回退 blob 在 stage2/swapToBlob 内）
@@ -765,7 +765,7 @@ prefixUrl(song, curPrefixCtl).then(async pu=>{
       audio.addEventListener("error", function h(){ audio.removeEventListener("error",h); if(queue[qi]===song && song._onStream){ song._onStream=false; swapToBlob(song, pauseGen, userPlayGen, 0, true); } });
       await audio.play();
       loading=false; setPlayStatus(""); hideToast();
-      prefetchNext(); ensureQueue();
+      setTimeout(()=>{ if(queue[qi]===song) prefetchNext(); }, 6000); ensureQueue(); // v9.55：预取让行 6 秒（慢管道先紧着当前歌换流）
       return;
     }catch(se){ song._onStream=false; /* 直链也不行 → 落到整曲回退 */ }
   }
