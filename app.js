@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.46 2026-10-28";
+const APP_VER = "v9.47 2026-10-28";
 
 /* v9.43 换域名搬家：新地址带 #mv1=<base64> 打开时，先把旧地址带来的本地数据写入本域名（必须在读 cfg 前） */
 (function(){ try{
@@ -401,7 +401,7 @@ const blobInflight={};
    排队中的旧任务直接作废，正在下的若不是这首歌立刻中止让路。
    （v9.28 的纯串行队列会让连点下一首时每首排队挨个下，新点的歌半天轮不上、还在放原来的——用户实测。） */
 let pauseGen=0; // v9.35：pause 事件代次（阶段二换源的防抢播守卫）
-let userPlayGen=0; // v9.42：用户意图代次——只由 togglePlay 的恢复动作 +1。注意不能用 'play' 事件计数：换源幻影自播也会触发 'play' 事件（test31 实证），会把守卫骗下岗
+let userPlayGen=0, wantPlay=false; // v9.47：播放意图（区别于元素状态）——后台被系统掐停后靠它自愈；只由用户级动作改写 // v9.42：用户意图代次——只由 togglePlay 的恢复动作 +1。注意不能用 'play' 事件计数：换源幻影自播也会触发 'play' 事件（test31 实证），会把守卫骗下岗
 /* v9.46：iOS/WebKit 媒体解锁。新域名＝全新站点，元素从没被"手势内播放"解锁过时，
    程序化 play()（点歌后异步加载完再调）会被 NotAllowedError 拦下且被旧代码静默吞掉，
    表现为"选了歌不自动播、按播放键却能播"。两道保险：
@@ -585,11 +585,20 @@ function prefetchNext(){
     if(cur && blobInflight[cur.p]) blobInflight[cur.p].then(start, start);
     else start();
   }
+  // v9.47：再往后一首也预取（后台连播的跑道从 1 首加深到 2 首，锁屏限流时更耐断）
+  const n2=queue[(qi+2)%queue.length];
+  if(n2 && n2!==queue[qi] && n2!==n && !n2._prefetching && !objCache[n2.p]){
+    n2._prefetching=true;
+    const start2=()=>{ if(queue[(qi+2)%queue.length]!==n2){ n2._prefetching=false; return; } blobUrl(n2).catch(()=>{}).finally(()=>{ n2._prefetching=false; }); };
+    const n1=queue[(qi+1)%queue.length];
+    if(n1 && blobInflight[n1.p]) blobInflight[n1.p].then(start2, start2); else start2();
+  }
 }
 document.addEventListener("visibilitychange",()=>{
   if(document.visibilityState==="visible"){ try{ pushAuthToSW(); }catch(e){} trySwapToBlob(queue[qi]); }
 });
 function playAt(i, autoplay=true){
+if(autoplay) wantPlay=true;
 if(i<0||i>=queue.length) return;
 qi=i; const song=queue[qi]; fbRetry=false;
 if(loadingSong===song) return; // 这首正在加载中，重复点不重启（v9.30）
@@ -701,6 +710,7 @@ function handleSongFailed(song, e, msg){
   failStreak++;
   const cap=Math.min(queue.length||1, 8);
   if(queue.length<=1 || failStreak>=cap){
+    wantPlay=false;
     const m=msg||("播放失败："+((e&&e.msg)||e||"加载失败"));
     setPlayStatus(m); toast(m,"err",8000);
     return;
@@ -735,13 +745,14 @@ async function playFallback(song, origErr){
 }
 function togglePlay(){
 if(loadingSong){ // 正在整曲加载（v9.30）：按钮取消加载意图，再点一次重新加载这首
+  wantPlay=false;
   loadCancelled=loadingSong; loadingSong=null; playSeq++; loading=false;
   audio.pause(); setPlayStatus(""); renderPlayer();
   return;
 }
 if(loadCancelled && loadCancelled===queue[qi]){ loadCancelled=null; return playAt(qi); }
 if(!audio.src && queue.length) return playAt(0);
-if(audio.paused){ userPlayGen++; const pr=audio.play(); if(pr&&pr.catch) pr.catch(()=>{}); } else audio.pause(); // v9.42：记一次真实恢复意图
+if(audio.paused){ wantPlay=true; userPlayGen++; const pr=audio.play(); if(pr&&pr.catch) pr.catch(()=>{}); } else { wantPlay=false; audio.pause(); } // v9.42：记一次真实恢复意图
 }
 function next(auto=false){
 if(!queue.length) return;
@@ -833,6 +844,7 @@ if(audio.currentTime>3){ audio.currentTime=0; return;}
 playAt((qi-1+queue.length)%queue.length);
 }
 audio.addEventListener("ended",()=>{ const s=queue[qi]; if(s) logPlay(s,true);
+  if(s && s._onPrefix && !s._swapped && s._pendingSeek==null) s._pendingSeek=audio.duration||0; // v9.47：首段先播完、整曲还没到（多见于锁屏限流）——不是真结束，等换源落位续播
   if(s && s._pendingSeek!=null && !s._swapped){
     // v9.37：进度被拖到首段之后、整曲还没换上——别跳走，等换源落到目标位续播；45 秒没换上再跳歌兜底
     setTimeout(()=>{ if(queue[qi]===s && s._pendingSeek!=null && !s._swapped) next(true); }, 45000);
@@ -869,6 +881,8 @@ setInterval(()=>{
 },4000);
 audio.addEventListener("play",syncPlayBtns);
 audio.addEventListener("pause",syncPlayBtns);
+audio.addEventListener("playing",()=>{ try{ if("mediaSession" in navigator) navigator.mediaSession.playbackState="playing"; }catch(e){} });
+audio.addEventListener("pause",()=>{ try{ if("mediaSession" in navigator) navigator.mediaSession.playbackState="paused"; }catch(e){} });
 /* v8.5 方式：不上报位置，避免干扰 iOS 连播和按钮 */
 function setPositionState(){}
 let lastPosState=0;
@@ -918,14 +932,36 @@ function preSwitch(){
 }
 audio.addEventListener("loadedmetadata",()=>{ $("tDur").textContent=fmtTime(audio.duration);});
 
+/* v9.47 后台连续性：iOS 锁屏后页面被限流/挂起，连播常在"下一首的加载或 play()"处断掉，
+   回前台时按 wantPlay 自动续播，用户不必再点播放键。自愈只认意图、不认元素状态，
+   用户亲手暂停（含锁屏暂停）已把 wantPlay 清掉，不会被顶。 */
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState!=="visible" || !wantPlay || !queue[qi] || loading) return;
+  if(!audio.paused) return;
+  if(audio.ended || !audio.src){ playAt(qi); return; }
+  const pr=audio.play();
+  if(pr&&pr.catch) pr.catch(()=>{ if(wantPlay&&queue[qi]) _resumeOnTap=true; });
+  setTimeout(()=>{ if(wantPlay&&queue[qi]&&audio.paused&&!audio.ended&&!loading) playAt(qi); },1500);
+});
+let _healTimer=null;
+audio.addEventListener("pause",()=>{
+  if(!wantPlay || audio.ended || loading) return;
+  const song=queue[qi]; if(!song || !song._played) return; // 只治已开播被中途掐停的；加载期归主流程
+  if(_healTimer) return;
+  _healTimer=setTimeout(()=>{ _healTimer=null;
+    if(wantPlay&&queue[qi]===song&&audio.paused&&!audio.ended){ const pr=audio.play(); if(pr&&pr.catch) pr.catch(()=>{ _resumeOnTap=true; }); }
+  },3000);
+});
+audio.addEventListener("playing",()=>{ if(_healTimer){ clearTimeout(_healTimer); _healTimer=null; } });
+
 /* 锁屏/耳机控制 */
 function updateMediaSession(song){
 if(!("mediaSession" in navigator)) return;
 try{
 navigator.mediaSession.metadata=new MediaMetadata({
 title:dispTitle(song), artist:dispArtist(song), album:song.f||"知行音乐"});
-try{navigator.mediaSession.setActionHandler("play",()=>audio.play());}catch(e){}
-try{navigator.mediaSession.setActionHandler("pause",()=>audio.pause());}catch(e){}
+try{navigator.mediaSession.setActionHandler("play",()=>{ wantPlay=true; audio.play().catch(()=>{}); });}catch(e){}
+try{navigator.mediaSession.setActionHandler("pause",()=>{ wantPlay=false; audio.pause(); });}catch(e){}
 try{navigator.mediaSession.setActionHandler("previoustrack",()=>prev());}catch(e){}
 try{navigator.mediaSession.setActionHandler("nexttrack",()=>next(true));}catch(e){}
 }catch(e){}
