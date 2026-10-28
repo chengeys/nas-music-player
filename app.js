@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.51 2026-10-28";
+const APP_VER = "v9.52 2026-10-28";
 
 /* v9.43 换域名搬家：新地址带 #mv1=<base64> 打开时，先把旧地址带来的本地数据写入本域名（必须在读 cfg 前） */
 (function(){ try{
@@ -519,7 +519,7 @@ throw lastErr||{code:0,msg:"重试后仍失败"};
 }
 /* 首段秒播（v9.31）：先取开头 2MB 立刻开播，整曲随后同位置换上。
    2MB 约值 128k 码率 2 分钟 / 320k 约 50 秒，一般够等整曲下完。 */
-const PREFIX_BYTES=2097152;
+const PREFIX_BYTES=524288; // v9.52：512KB（320k 约 13 秒/FLAC 约 3 秒）——阶段一出声后约 1 秒即换直链流，首段只管开头；原 2MB 在约 1Mbps 下要等近 20 秒才出声
 const prefixUrls={};
 let curPrefixCtl=null;
 async function prefixUrl(song, extCtl){
@@ -751,7 +751,20 @@ prefixUrl(song, curPrefixCtl).then(async pu=>{
   stage2(song, pu); // v9.50：换直链流（回退 blob 在 stage2/swapToBlob 内）
 }).catch(async e=>{
   if(playSeq!==mySeq || queue[qi]!==song){ if(loadingSong===song) loadingSong=null; return; } // 已被更新的点播取代
-  // 首段也取不到：退回等整曲（v9.30 的路）
+  // 首段也取不到：先试直链开播（v9.52，比等整曲快得多），流挂了再退回等整曲（v9.30 的路）
+  if(autoplay){
+    try{
+      if(loadingSong===song) loadingSong=null;
+      audio.src=songUrl(song); song._onStream=true; song._swapped=true; song._onPrefix=false;
+      if(song._pendingSeek!=null){ const pt2=song._pendingSeek; song._pendingSeek=null; audio.addEventListener("loadedmetadata", function hh(){ audio.removeEventListener("loadedmetadata",hh); try{ audio.currentTime=pt2; }catch(e){} }); }
+      else if(song._resumeAt>5){ const rt=song._resumeAt; song._resumeAt=0; audio.addEventListener("loadedmetadata", function hh(){ audio.removeEventListener("loadedmetadata",hh); try{ audio.currentTime=rt; }catch(e){} }); }
+      audio.addEventListener("error", function h(){ audio.removeEventListener("error",h); if(queue[qi]===song && song._onStream){ song._onStream=false; swapToBlob(song, pauseGen, userPlayGen, 0, true); } });
+      await audio.play();
+      loading=false; setPlayStatus(""); hideToast();
+      prefetchNext(); ensureQueue();
+      return;
+    }catch(se){ song._onStream=false; /* 直链也不行 → 落到整曲回退 */ }
+  }
   try{
     const ou=await blobUrl(song);
     if(loadingSong===song) loadingSong=null;
@@ -990,6 +1003,7 @@ preSwitch();
 });
 /* 提前切歌：结束前2秒、还在出声时切下一首，iOS 当连续播放放行 */
 function preSwitch(){
+  if(audio.paused || !wantPlay || repeatOne) return; // v9.52：暂停中（含用户拖到结尾细听）与单曲循环不提前切
   const song=queue[qi]; if(!song || song._preSwitched) return;
   if(!audio.duration || audio.duration<10) return;
   const remain=audio.duration-audio.currentTime;
@@ -1003,11 +1017,17 @@ function preSwitch(){
   if(!ns || ns===song) return;
   const blob=objCache[ns.p];
   const useBlob=!!blob;
-  if(!useBlob) return; // v9.33：下一首整曲没备好就不提前切——绝不回流式直链兜底，留给 ended→playAt 走首段秒播
+  // v9.52：v9.33 时代因旧直链不可靠才规定"没备好整曲就不提前切"；v9.50 起直链流已是阶段二主通道，
+  // 未缓存也提前切到直链——关键是赶在 ended 之前切。iOS 在 ended 之后会收回程序自动播放的资格，
+  // 下一首的 play() 被静默扣下、必须手点（用户实测"放完卡住、暂停再播放才走"），提前切即绕开此坑。
   song._preSwitched=true;
   logPlay(song,true);
-  qi=ni; ns._swapped=useBlob; ns._onPrefix=false; ns._pendingSeek=null; // v9.37
+  try{ localStorage.removeItem("zmusic.resume"); }catch(e){}
+  qi=ni; ns._swapped=true; ns._onPrefix=false; ns._pendingSeek=null; ns._onStream=!useBlob; ns._dlRetry=0; ns._streamRetry=0; ns._played=false; // v9.52
   audioPlaying=false;
+  if(!useBlob){ try{ pushAuthToSW(); }catch(e){}
+    audio.addEventListener("error", function h(){ audio.removeEventListener("error",h); if(queue[qi]===ns && ns._onStream){ ns._onStream=false; swapToBlob(ns, pauseGen, userPlayGen, 0, true); } });
+  }
   audio.src=useBlob?blob:songUrl(ns);
   // 歌词与切歌同时开始加载，不等 play() 成功（此前要等开播后才取歌词）
   curLyrics=[]; lyricsLoading=true; renderLyrics();
@@ -1021,7 +1041,8 @@ function preSwitch(){
       loading=false; setPlayStatus(""); hideToast();
       renderPlayer(); updateMediaSession(ns); logPlay(ns,false);
       prefetchNext(); ensureQueue();
-    }).catch(()=>{ /* 提前切歌失败就不重试，留给 ended→next 与看门狗兜底（v9.13：此前反复重试会来回跳） */ });
+    }).catch(()=>{ /* 提前切歌失败：多半是 iOS 把 play() 扣下——标记待点播恢复，用户下一次任意点按即接着播；ended→next 与看门狗再兜底 */
+      if(queue[qi]===ns) _resumeOnTap=true; });
   }
 }
 audio.addEventListener("loadedmetadata",()=>{ $("tDur").textContent=fmtTime(audio.duration);});
