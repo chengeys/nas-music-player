@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.45 2026-10-28";
+const APP_VER = "v9.46 2026-10-28";
 
 /* v9.43 换域名搬家：新地址带 #mv1=<base64> 打开时，先把旧地址带来的本地数据写入本域名（必须在读 cfg 前） */
 (function(){ try{
@@ -402,6 +402,25 @@ const blobInflight={};
    （v9.28 的纯串行队列会让连点下一首时每首排队挨个下，新点的歌半天轮不上、还在放原来的——用户实测。） */
 let pauseGen=0; // v9.35：pause 事件代次（阶段二换源的防抢播守卫）
 let userPlayGen=0; // v9.42：用户意图代次——只由 togglePlay 的恢复动作 +1。注意不能用 'play' 事件计数：换源幻影自播也会触发 'play' 事件（test31 实证），会把守卫骗下岗
+/* v9.46：iOS/WebKit 媒体解锁。新域名＝全新站点，元素从没被"手势内播放"解锁过时，
+   程序化 play()（点歌后异步加载完再调）会被 NotAllowedError 拦下且被旧代码静默吞掉，
+   表现为"选了歌不自动播、按播放键却能播"。两道保险：
+   ① 首次触摸时（手势内）用静音片段把元素解锁——仅当还没选过歌、不打扰任何现有状态；
+   ② play() 若被 NotAllowedError 拦下，记 _resumeOnTap，下一次任意触摸时补播当前歌
+      （触摸落在播放按钮上时不补——让 togglePlay 自己在手势里播，免得补播又被它暂停）。 */
+const SILENT_WAV="data:audio/wav;base64,UklGRiQFAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
+let _mediaUnlocked=false, _resumeOnTap=false;
+document.addEventListener("pointerdown",e=>{
+  if(_resumeOnTap){ _resumeOnTap=false;
+    const onToggle=e.target&&e.target.closest&&e.target.closest("#miniToggle,#fpToggle");
+    if(!onToggle&&queue[qi]&&audio.paused) audio.play().catch(()=>{});
+  }
+  if(_mediaUnlocked) return; _mediaUnlocked=true;
+  if(queue[qi]||loading) return;
+  try{ audio.src=SILENT_WAV; const pr=audio.play();
+    if(pr&&pr.then) pr.then(()=>{ audio.pause(); try{ audio.removeAttribute("src"); audio.load(); }catch(_){} }).catch(()=>{});
+  }catch(_){}
+},true);
 let dlRunning=null, dlQueued=null;
 function dlGate(song){
   return new Promise((resolve, reject)=>{
@@ -600,7 +619,7 @@ if(autoplay){
 if(cached){
   // 已有本地整曲（预取/重播）：立即播，零等待
   audio.src=cached; song._swapped=true; song._onPrefix=false; song._pendingSeek=null;
-  if(autoplay){ audio.play().then(()=>{ loading=false; setPlayStatus(""); hideToast(); prefetchNext(); ensureQueue(); }).catch(()=>{ loading=false; }); }
+  if(autoplay){ audio.play().then(()=>{ loading=false; setPlayStatus(""); hideToast(); prefetchNext(); ensureQueue(); }).catch(e=>{ loading=false; if(e&&e.name==="NotAllowedError") _resumeOnTap=true; }); }
   else loading=false;
   return;
 }
@@ -615,7 +634,7 @@ prefixUrl(song, curPrefixCtl).then(async pu=>{
   if(loadingSong===song) loadingSong=null;
   audio.src=pu; song._onPrefix=true; song._pendingSeek=null; // v9.37：进入首段阶段
   if(autoplay){
-    try{ await audio.play(); }catch(e){}
+    try{ await audio.play(); }catch(e){ if(e&&e.name==="NotAllowedError") _resumeOnTap=true; }
     loading=false; setPlayStatus(""); hideToast();
     prefetchNext(); ensureQueue();
   } else loading=false;
@@ -651,7 +670,7 @@ prefixUrl(song, curPrefixCtl).then(async pu=>{
     if(playSeq!==mySeq || queue[qi]!==song) return;
     audio.src=ou; song._swapped=true; song._onPrefix=false;
     if(song._pendingSeek!=null){ const pt=song._pendingSeek; song._pendingSeek=null; try{ audio.currentTime=pt; }catch(e){} } // v9.37
-    if(autoplay){ try{ await audio.play(); }catch(err){} loading=false; setPlayStatus(""); hideToast(); prefetchNext(); ensureQueue(); }
+    if(autoplay){ try{ await audio.play(); }catch(err){ if(err&&err.name==="NotAllowedError") _resumeOnTap=true; } loading=false; setPlayStatus(""); hideToast(); prefetchNext(); ensureQueue(); }
     else loading=false;
   }catch(e2){
     if(loadingSong===song) loadingSong=null;
