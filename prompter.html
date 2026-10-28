@@ -98,7 +98,8 @@
 </div>
 <div id="beautyPanel">
 <div class="row">
-<div class="grp"><span class="lbl">美白</span><input id="rgWhite" type="range" min="0" max="100" value="35"></div>
+<div class="grp"><span class="lbl">磨皮</span><input id="rgSmooth" type="range" min="0" max="100" value="65"></div>
+<div class="grp"><span class="lbl">美白</span><input id="rgWhite" type="range" min="0" max="100" value="45"></div>
 <div class="grp"><button id="btnPeek">按住看原图</button></div>
 </div>
 </div>
@@ -289,14 +290,66 @@ const a=document.createElement("a"); a.href=lastUrl; a.download=file.name; docum
 toast("已下载到文件，请到文件里打开再存相册",3200);
 };
 
-/* 美颜引擎：WebGL 实时处理（磨皮=压高频，美白=提亮曲线，滤镜=色调），预览即录制效果 */
-let beautyOn=false, gl=null, glProg=null, glTex=null, glLoc={}, beautyFilter=0, renderRunning=false;
+/* 美颜引擎 A档（2026-10-28 升级，用户验收静图对比后上线）：多通道 WebGL 实时处理
+   管线：Pass1/2 半分辨率高斯模糊出低频层 → Pass3 频率分离（皮肤区压高频纹理=真磨皮）
+        ＋ YCbCr 肤色遮罩（美白只进皮肤、背景五官不动）＋ LUT 式 S 曲线/白平衡滤镜
+   旧版单通道着色器（只有全画面提亮+RGB 倍乘、无磨皮）已废弃；多通道不可用时自动回退单通道保底 */
+let beautyOn=false, gl=null, beautyFilter=0, renderRunning=false;
+let pBlur=null, pMain=null, pFlat=null, texSrc=null, fboA=null, fboB=null, multiOK=false, flatLoc={};
 const VS_SRC="attribute vec2 p; varying vec2 v; void main(){ v=p*0.5+0.5; gl_Position=vec4(p,0.0,1.0); }";
-const FS_SRC=[
+const FS_BLUR=[
 "precision mediump float;",
 "varying vec2 v;",
 "uniform sampler2D t;",
-"uniform vec2 px;",
+"uniform vec2 dir;",
+"void main(){",
+"  vec3 s=texture2D(t,v).rgb*0.227027;",
+"  vec2 o1=dir*1.3846153; vec2 o2=dir*3.2307692;",
+"  s+=texture2D(t,v+o1).rgb*0.3162162; s+=texture2D(t,v-o1).rgb*0.3162162;",
+"  s+=texture2D(t,v+o2).rgb*0.0702703; s+=texture2D(t,v-o2).rgb*0.0702703;",
+"  gl_FragColor=vec4(s,1.0);",
+"}"
+].join("\n");
+const FS_MAIN=[
+"precision mediump float;",
+"varying vec2 v;",
+"uniform sampler2D tSrc;",
+"uniform sampler2D tLow;",
+"uniform float uSmooth;",
+"uniform float uWhite;",
+"uniform int uMode;",
+"float skinMask(vec3 c){",
+"  float y=0.299*c.r+0.587*c.g+0.114*c.b;",
+"  float cr=0.713*(c.r-y)+0.5;",
+"  float cb=0.564*(c.b-y)+0.5;",
+"  float m1=smoothstep(0.50,0.54,cr)*(1.0-smoothstep(0.64,0.68,cr));",
+"  float m2=smoothstep(0.28,0.31,cb)*(1.0-smoothstep(0.47,0.50,cb));",
+"  float m3=smoothstep(0.15,0.30,y);",
+"  return clamp(m1*m2*1.6,0.0,1.0)*m3;",
+"}",
+"void main(){",
+"  vec3 c=texture2D(tSrc,v).rgb;",
+"  vec3 low=texture2D(tLow,v).rgb;",
+"  float m=skinMask(c);",
+"  vec3 high=c-low;",
+"  float keep=1.0-0.82*uSmooth*m;",
+"  vec3 col=low+high*keep;",
+"  float lift=uWhite*m;",
+"  col+=(1.0-col)*0.10*lift+col*0.13*lift;",
+"  col.b=mix(col.b,col.b*1.05+0.008,lift);",
+"  vec3 sc=col*col*(3.0-2.0*col);",
+"  if(uMode==1){ col=mix(col,sc,0.30); float lum=dot(col,vec3(0.299,0.587,0.114)); col=mix(vec3(lum),col,1.10); }",
+"  else if(uMode==2){ col*=vec3(1.07,1.0,0.92); col=mix(col,sc,0.15); }",
+"  else if(uMode==3){ col*=vec3(0.94,1.0,1.07); col=mix(col,sc,0.15); }",
+"  else { col=mix(col,sc,0.18); float lum2=dot(col,vec3(0.299,0.587,0.114)); col=mix(vec3(lum2),col,1.05); }",
+"  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);",
+"}"
+].join("\n");
+/* 保底单通道（旧算法）：多通道 FBO 不可用时保证美颜开关仍有基本效果 */
+const FS_FLAT=[
+"precision mediump float;",
+"varying vec2 v;",
+"uniform sampler2D t;",
 "uniform float white;",
 "uniform int mode;",
 "void main(){",
@@ -309,32 +362,65 @@ const FS_SRC=[
 "  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);",
 "}"
 ].join("\n");
+function mkProg(fs){
+  function sh(type,s){ const h=gl.createShader(type); gl.shaderSource(h,s); gl.compileShader(h); return gl.getShaderParameter(h,gl.COMPILE_STATUS)?h:null; }
+  const vs=sh(gl.VERTEX_SHADER,VS_SRC), fg=sh(gl.FRAGMENT_SHADER,fs);
+  if(!vs||!fg) return null;
+  const p=gl.createProgram(); gl.attachShader(p,vs); gl.attachShader(p,fg); gl.linkProgram(p);
+  return gl.getProgramParameter(p,gl.LINK_STATUS)?p:null;
+}
+function bindQuad(p){
+  const loc=gl.getAttribLocation(p,"p");
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+}
+function makeFBO(w,h){
+  const t=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  const f=gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER,f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);
+  const ok=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  return ok?{f:f,t:t,w:w,h:h}:null;
+}
 function initGL(){
   const cv=$("view");
   gl=cv.getContext("webgl",{premultipliedAlpha:false,antialias:false})||cv.getContext("experimental-webgl");
   if(!gl) return false;
-  function mkShader(type,s){ const sh=gl.createShader(type); gl.shaderSource(sh,s); gl.compileShader(sh); return sh; }
-  glProg=gl.createProgram();
-  gl.attachShader(glProg,mkShader(gl.VERTEX_SHADER,VS_SRC));
-  gl.attachShader(glProg,mkShader(gl.FRAGMENT_SHADER,FS_SRC));
-  gl.linkProgram(glProg);
-  if(!gl.getProgramParameter(glProg,gl.LINK_STATUS)) return false;
-  gl.useProgram(glProg);
   const buf=gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER,buf);
   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1, 1,-1, -1,1, 1,1]),gl.STATIC_DRAW);
-  const loc=gl.getAttribLocation(glProg,"p");
-  gl.enableVertexAttribArray(loc);
-  gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
-  glTex=gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D,glTex);
+  texSrc=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,texSrc);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
-  glLoc={ white:gl.getUniformLocation(glProg,"white"), mode:gl.getUniformLocation(glProg,"mode") };
+  pFlat=mkProg(FS_FLAT);
+  if(!pFlat) return false;
+  flatLoc={ white:gl.getUniformLocation(pFlat,"white"), mode:gl.getUniformLocation(pFlat,"mode") };
+  pBlur=mkProg(FS_BLUR); pMain=mkProg(FS_MAIN);
+  fboA=makeFBO(2,2); fboB=makeFBO(2,2);
+  multiOK=!!(pBlur&&pMain&&fboA&&fboB);
   return true;
+}
+function drawFlat(){
+  const cv=$("view");
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,cv.width,cv.height);
+  gl.useProgram(pFlat); bindQuad(pFlat);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,texSrc);
+  gl.uniform1i(gl.getUniformLocation(pFlat,"t"),0);
+  gl.uniform1f(flatLoc.white,parseFloat($("rgWhite").value)/100);
+  gl.uniform1i(flatLoc.mode,beautyFilter);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
 }
 function renderLoop(){
   if(!beautyOn||!gl){ renderRunning=false; return; }
@@ -342,12 +428,35 @@ function renderLoop(){
   const cam=$("cam"), cv=$("view");
   if(cam.readyState>=2 && cam.videoWidth){
     if(cv.width!==cam.videoWidth||cv.height!==cam.videoHeight){ cv.width=cam.videoWidth; cv.height=cam.videoHeight; }
-    gl.viewport(0,0,cv.width,cv.height);
-    gl.bindTexture(gl.TEXTURE_2D,glTex);
+    gl.bindTexture(gl.TEXTURE_2D,texSrc);
     try{ gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,cam); }catch(e){}
-    gl.uniform1f(glLoc.white,parseFloat($("rgWhite").value)/100);
-    gl.uniform1i(glLoc.mode,beautyFilter);
-    gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    if(multiOK){
+      const bw=Math.max(2,cv.width>>1), bh=Math.max(2,cv.height>>1);
+      if(fboA.w!==bw||fboA.h!==bh){ fboA=makeFBO(bw,bh); fboB=makeFBO(bw,bh); if(!fboA||!fboB){ multiOK=false; } }
+      if(multiOK){
+        gl.useProgram(pBlur); bindQuad(pBlur);
+        gl.uniform1i(gl.getUniformLocation(pBlur,"t"),0);
+        gl.bindFramebuffer(gl.FRAMEBUFFER,fboA.f); gl.viewport(0,0,bw,bh);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,texSrc);
+        gl.uniform2f(gl.getUniformLocation(pBlur,"dir"),1.0/cv.width,0.0);
+        gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+        gl.bindFramebuffer(gl.FRAMEBUFFER,fboB.f); gl.viewport(0,0,bw,bh);
+        gl.bindTexture(gl.TEXTURE_2D,fboA.t);
+        gl.uniform2f(gl.getUniformLocation(pBlur,"dir"),0.0,1.0/bh);
+        gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+        gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,cv.width,cv.height);
+        gl.useProgram(pMain); bindQuad(pMain);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,texSrc);
+        gl.uniform1i(gl.getUniformLocation(pMain,"tSrc"),0);
+        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,fboB.t);
+        gl.uniform1i(gl.getUniformLocation(pMain,"tLow"),1);
+        gl.uniform1f(gl.getUniformLocation(pMain,"uSmooth"),parseFloat($("rgSmooth").value)/100);
+        gl.uniform1f(gl.getUniformLocation(pMain,"uWhite"),parseFloat($("rgWhite").value)/100);
+        gl.uniform1i(gl.getUniformLocation(pMain,"uMode"),beautyFilter);
+        gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+        gl.activeTexture(gl.TEXTURE0);
+      } else drawFlat();
+    } else drawFlat();
   }
   requestAnimationFrame(renderLoop);
 }
@@ -372,7 +481,7 @@ $("btnBeauty").onclick=()=>{
     $("btnBeauty").classList.add("on"); $("beautyState").textContent="开";
     $("beautyPanel").classList.add("open");
     if(!renderRunning) renderLoop();
-    toast("美颜已开，预览就是录出来的样子");
+    toast(multiOK?"美颜已开（A档：磨皮+肤色美白），预览就是录出来的样子":"美颜已开（兼容模式），预览就是录出来的样子");
   } else {
     beautyOn=false;
     applyPure();
