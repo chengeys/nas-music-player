@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.49 2026-10-28";
+const APP_VER = "v9.50 2026-10-28";
 
 /* v9.43 换域名搬家：新地址带 #mv1=<base64> 打开时，先把旧地址带来的本地数据写入本域名（必须在读 cfg 前） */
 (function(){ try{
@@ -448,12 +448,36 @@ const job=dlGate(song);
 blobInflight[song.p]=job;
 try{ return await job; } finally{ delete blobInflight[song.p]; }
 }
+/* v9.50：流式读完响应体，只用闲置超时判死（连续 idleMs 无新数据才放弃），不设总时限——
+   慢但在动的下载给足时间。总死线是真机元凶：40 秒内下不完 8MB+ 的歌、两轮重试各从零
+   开始，首段一耗尽歌就死（《大风吹》8.96MB/222s，2MB 首段正好 52 秒，与用户实测分秒不差）。 */
+async function readBlobIdle(resp, idleMs, ctl){
+  if(!resp.body || !resp.body.getReader) return await resp.blob();
+  const reader=resp.body.getReader(); const chunks=[];
+  let aborted=false;
+  const onAbort=()=>{ aborted=true; try{ reader.cancel(); }catch(e){} };
+  if(ctl) ctl.signal.addEventListener("abort", onAbort, {once:true});
+  try{
+    for(;;){
+      let timer=null;
+      const timeout=new Promise((_,rej)=>{ timer=setTimeout(()=>rej({code:0, msg:"下载停滞", idle:true}), idleMs); });
+      let res;
+      try{ res=await Promise.race([reader.read(), timeout]); }
+      catch(e){ try{ reader.cancel(); }catch(_){} throw e; }
+      finally{ if(timer) clearTimeout(timer); }
+      if(aborted) throw {code:0, msg:"已取消", superseded:true};
+      if(res.done) break;
+      chunks.push(res.value);
+    }
+  } finally { if(ctl) ctl.signal.removeEventListener("abort", onAbort); }
+  return new Blob(chunks, {type: (resp.headers && resp.headers.get("Content-Type")) || ""});
+}
 async function blobDownload(song, extCtl){
 if(extCtl && extCtl.signal.aborted) throw {code:0, msg:"已取消", superseded:true};
 const url=songUrl(song);
 let lastErr=null;
 for(let attempt=0;attempt<2;attempt++){
-const ctl=new AbortController(); const dlT=setTimeout(()=>ctl.abort(), 40000); // 单次 40 秒死线（v9.28）：细流假死的连接不能无限期占通道
+const ctl=new AbortController(); // v9.50：不再设总死线，停滞判定交给 readBlobIdle 的闲置超时
 const onExt=()=>ctl.abort(); if(extCtl) extCtl.signal.addEventListener("abort", onExt, {once:true});
 try{
 const r=await fetch(url,{headers:davHeaders(), signal:ctl.signal});
@@ -464,12 +488,24 @@ if(r.status===502||r.status===503||r.status===504){
   await new Promise(r2=>setTimeout(r2,1500)); continue;
 }
 if(!r.ok) throw {code:r.status,msg:"NAS 返回 "+r.status};
-const blob=await r.blob();
+const blob=await readBlobIdle(r, 20000, ctl);
 const ou=URL.createObjectURL(blob);
 objCache[song.p]=ou; blobCache[song.p]=blob;
 if(Object.keys(objCache).length>5){
 const old=Object.keys(objCache)[0];
 URL.revokeObjectURL(objCache[old]); delete objCache[old]; delete blobCache[old];
+}
+// v9.50：再按总字节封顶（几首大文件就上百 MB，iOS 会把页面挤爆重载）；不逐当前源与队列前三首
+{
+  let tot=0; for(const k in blobCache) tot+=blobCache[k].size;
+  if(tot>120*1024*1024){
+    const keep=new Set([song.p]); if(queue[qi]){ keep.add(queue[qi].p); const n1=queue[qi+1], n2=queue[qi+2]; if(n1) keep.add(n1.p); if(n2) keep.add(n2.p); }
+    for(const k of Object.keys(blobCache)){
+      if(tot<=120*1024*1024) break;
+      if(keep.has(k) || objCache[k]===audio.src) continue;
+      tot-=blobCache[k].size; URL.revokeObjectURL(objCache[k]); delete objCache[k]; delete blobCache[k];
+    }
+  }
 }
 return ou;
 }catch(e){
@@ -477,7 +513,7 @@ if(e&&e.code===401) throw e;
 if(extCtl && extCtl.signal.aborted) throw {code:0, msg:"已取消", superseded:true}; // 被新点播取代：立即停，不重试
 if(e instanceof TypeError || (e&&e.name==="AbortError")){ lastErr={code:0,msg:"下载超时或网络中断"}; await new Promise(r2=>setTimeout(r2,1500)); continue; }
 throw e;
-}finally{ clearTimeout(dlT); if(extCtl) extCtl.signal.removeEventListener("abort", onExt); }
+}finally{ if(extCtl) extCtl.signal.removeEventListener("abort", onExt); }
 }
 throw lastErr||{code:0,msg:"重试后仍失败"};
 }
@@ -493,13 +529,13 @@ async function prefixUrl(song, extCtl){
   let lastErr=null;
   for(let attempt=0; attempt<2; attempt++){
     if(extCtl && extCtl.signal.aborted) throw {code:0, msg:"已取消", superseded:true};
-    const ctl=new AbortController(); const dlT=setTimeout(()=>ctl.abort(), 20000);
+    const ctl=new AbortController(); // v9.50：同 blobDownload，不设总死线
     const onExt=()=>ctl.abort(); if(extCtl) extCtl.signal.addEventListener("abort", onExt, {once:true});
     try{
       const r=await fetch(url, {headers: Object.assign(davHeaders(), {Range:"bytes=0-"+(PREFIX_BYTES-1)}), signal: ctl.signal});
       if(r.status===401) throw {code:401, msg:"账号或密码不对（401），去设置页检查"};
       if(!r.ok && r.status!==206) throw {code:r.status, msg:"NAS 返回 "+r.status};
-      const blob=await r.blob();
+      const blob=await readBlobIdle(r, 15000, ctl);
       const total=parseInt(((r.headers.get("Content-Range")||"").split("/")[1])||"0", 10);
       const ou=URL.createObjectURL(blob);
       if(r.status===200 || (total>0 && total<=blob.size)){ objCache[song.p]=ou; blobCache[song.p]=blob; return ou; } // 拿到的就是整曲
@@ -527,7 +563,7 @@ async function prefixUrl(song, extCtl){
       if(e && e.code===401) throw e;
       if(extCtl && extCtl.signal.aborted) throw {code:0, msg:"已取消", superseded:true};
       lastErr=e; await new Promise(r2=>setTimeout(r2, 800));
-    }finally{ clearTimeout(dlT); if(extCtl) extCtl.signal.removeEventListener("abort", onExt); }
+    }finally{ if(extCtl) extCtl.signal.removeEventListener("abort", onExt); }
   }
   throw lastErr||{code:0, msg:"首段加载失败"};
 }
@@ -607,6 +643,58 @@ function prefetchNext(){
 document.addEventListener("visibilitychange",()=>{
   if(document.visibilityState==="visible"){ try{ pushAuthToSW(); }catch(e){} trySwapToBlob(queue[qi]); }
 });
+/* v9.50 阶段二（重构）：首段开播约 1 秒后换成直链流（经 SW 带凭据）——流没有总下载死线、
+   浏览器原生缓冲，慢网下顶多等待缓冲，不会再"整曲下载被判死→首段耗尽→跳到结尾/歌死"。
+   拖到首段外的待落位由流的 Range 原生定位承接。流出错或 5 秒仍不可播 → 回退整曲 blob 换源；
+   blob 失败重试一次，仍败才明确失败跳歌——关键路径不再有静默吞错的 .catch(()=>{})。 */
+function stage2(song, pu){
+  const pgAtReq=pauseGen, uplAtReq=userPlayGen;
+  setTimeout(()=>{
+    if(queue[qi]!==song || audio.src!==pu || song._swapped) return;
+    const hadPending=(song._pendingSeek!=null);
+    const ct=hadPending ? song._pendingSeek : (audio.currentTime||0);
+    const wasPlaying=(pauseGen===pgAtReq) && (!audio.paused || hadPending);
+    const intentPlay=wasPlaying;
+    song._pendingSeek=null; song._onPrefix=false; song._onStream=true; song._swapped=true; song._streamRetry=false;
+    song._swapAt=Date.now();
+    audio.src=songUrl(song);
+    try{ audio.currentTime=ct; }catch(e){}
+    if(wasPlaying) audio.play().catch(()=>{});
+    else if(pauseGen>pgAtReq){
+      const stomp=()=>{ if(queue[qi]===song && !audio.paused && pauseGen>pgAtReq && userPlayGen===uplAtReq) audio.pause(); };
+      audio.addEventListener("canplay", function h(){ audio.removeEventListener("canplay",h); setTimeout(stomp,50); });
+      audio.addEventListener("playing", function h2(){ audio.removeEventListener("playing",h2); stomp(); });
+      setTimeout(stomp, 800);
+    }
+    if(prefixUrls[song.p]){ URL.revokeObjectURL(prefixUrls[song.p]); delete prefixUrls[song.p]; }
+    setTimeout(()=>{ if(queue[qi]===song && song._onStream && audio.readyState<2 && audio.networkState!==2){ song._onStream=false; swapToBlob(song, pgAtReq, uplAtReq, 0, intentPlay); } }, 5000);
+    audio.addEventListener("error", function h(){ audio.removeEventListener("error",h); if(queue[qi]===song && song._onStream){ song._onStream=false; swapToBlob(song, pgAtReq, uplAtReq, 0, intentPlay); } });
+  }, 1000);
+}
+function swapToBlob(song, pgAtReq, uplAtReq, attempt, intentPlay){
+  blobUrl(song).then(ou=>{
+    if(queue[qi]!==song) return;
+    const hadPending=(song._pendingSeek!=null);
+    const wasPlaying=((pauseGen===pgAtReq) && ((!audio.paused && !audio.ended) || (audio.ended && hadPending))) || !!(intentPlay && pauseGen===pgAtReq) || !!(audio.error && pauseGen===pgAtReq), ct=hadPending ? song._pendingSeek : (audio.currentTime||0);
+    const stalled=!song._played && (audio.currentTime||0)<0.05;
+    song._pendingSeek=null; song._onPrefix=false; song._onStream=false;
+    song._swapAt=Date.now();
+    audio.src=ou; song._swapped=true;
+    try{ audio.currentTime=ct; }catch(e){}
+    if(wasPlaying || stalled) audio.play().catch(()=>{});
+    else if(pauseGen>pgAtReq){
+      const stomp=()=>{ if(queue[qi]===song && !audio.paused && pauseGen>pgAtReq && userPlayGen===uplAtReq) audio.pause(); };
+      audio.addEventListener("canplay", function h(){ audio.removeEventListener("canplay",h); setTimeout(stomp,50); });
+      audio.addEventListener("playing", function h2(){ audio.removeEventListener("playing",h2); stomp(); });
+      setTimeout(stomp, 800);
+    }
+    if(prefixUrls[song.p]){ URL.revokeObjectURL(prefixUrls[song.p]); delete prefixUrls[song.p]; }
+  }).catch(e=>{
+    if(queue[qi]!==song || (e && e.superseded)) return;
+    if(attempt<1){ setTimeout(()=>{ if(queue[qi]===song) swapToBlob(song, pgAtReq, uplAtReq, attempt+1, intentPlay); }, 3000); return; }
+    handleSongFailed(song, e);
+  });
+}
 function playAt(i, autoplay=true){
 if(autoplay) wantPlay=true;
 if(i<0||i>=queue.length) return;
@@ -614,7 +702,7 @@ qi=i; const song=queue[qi]; fbRetry=false;
 if(loadingSong===song) return; // 这首正在加载中，重复点不重启（v9.30）
 if(loadCancelled!==song) loadCancelled=null;
 diag("PLAY", song.t + " / " + (song.a || ""));
-song._swapped=false; song._preSwitched=false; song._played=false;
+song._swapped=false; song._preSwitched=false; song._played=false; song._onStream=false; song._dlRetry=false; song._streamRetry=false;
 stallActs=0; lastProgAt=Date.now(); lastProgTime=0;
 try{ pushAuthToSW(); }catch(e){} // 每次播放前把 NAS 凭据再推给 SW（新域名 SW 刚就位时防直链 401）
 // 有预取好的本地文件就直接用（锁屏连播可靠），否则走流式秒播
@@ -637,7 +725,9 @@ if(autoplay){
 }
 if(cached){
   // 已有本地整曲（预取/重播）：立即播，零等待
-  audio.src=cached; song._swapped=true; song._onPrefix=false; song._pendingSeek=null;
+  audio.src=cached; song._swapped=true; song._onPrefix=false; song._onStream=false;
+  if(song._resumeAt!=null){ try{ audio.currentTime=song._resumeAt; }catch(e){} song._resumeAt=null; }
+  song._pendingSeek=null;
   if(autoplay){ audio.play().then(()=>{ loading=false; setPlayStatus(""); hideToast(); prefetchNext(); ensureQueue(); }).catch(e=>{ loading=false; if(e&&e.name==="NotAllowedError") _resumeOnTap=true; }); }
   else loading=false;
   return;
@@ -651,35 +741,14 @@ curPrefixCtl=new AbortController();
 prefixUrl(song, curPrefixCtl).then(async pu=>{
   if(playSeq!==mySeq || queue[qi]!==song) return; // 已切走
   if(loadingSong===song) loadingSong=null;
-  audio.src=pu; song._onPrefix=true; song._pendingSeek=null; // v9.37：进入首段阶段
+  audio.src=pu; song._onPrefix=true; song._onStream=false; song._pendingSeek=(song._resumeAt!=null ? song._resumeAt : null); song._resumeAt=null; // v9.37 进入首段；v9.50 承接断点续播位
   if(autoplay){
     try{ await audio.play(); }catch(e){ if(e&&e.name==="NotAllowedError") _resumeOnTap=true; }
     loading=false; setPlayStatus(""); hideToast();
     prefetchNext(); ensureQueue();
   } else loading=false;
   if(objCache[song.p] && objCache[song.p]===pu){ song._swapped=true; song._onPrefix=false; return; } // 首段即整曲（小文件）
-  // 整曲随后接上：下完把首段临时源换成整曲源（同位置、不断播）
-  const pgAtReq=pauseGen, uplAtReq=userPlayGen;
-  blobUrl(song).then(ou=>{
-    if(queue[qi]!==song || audio.src!==pu) return;
-    const hadPending=(song._pendingSeek!=null); // v9.37：用户在首段阶段拖到过数据之外
-    const wasPlaying=(pauseGen===pgAtReq) && ((!audio.paused && !audio.ended) || (audio.ended && hadPending)), ct=hadPending ? song._pendingSeek : (audio.currentTime||0);
-    const stalled=!song._played && (audio.currentTime||0)<0.05; // 首段被 error 卡死、根本没播起来过
-    song._pendingSeek=null; song._onPrefix=false;
-    song._swapAt=Date.now(); // 换源时刻（v9.33）：紧随其后的过渡性 error 单独记 SWAPERR
-    audio.src=ou; song._swapped=true;
-    try{ audio.currentTime=ct; }catch(e){}
-    if(wasPlaying || stalled) audio.play().catch(()=>{});
-    else if(pauseGen>pgAtReq){
-      // v9.36：用户在下载等待期按过暂停——元素若处于错误/待定位状态，换源后浏览器会自行恢复播放
-      // （test27 实证：全程无任何 play() 调用却自己响了）。在 canplay 后与 800ms 兜底各补一记 pause 压住。
-      const stomp=()=>{ if(queue[qi]===song && !audio.paused && pauseGen>pgAtReq && userPlayGen===uplAtReq) audio.pause(); }; // v9.42：让路只认 togglePlay 的真实按键
-      audio.addEventListener("canplay", function h(){ audio.removeEventListener("canplay",h); setTimeout(stomp,50); });
-      audio.addEventListener("playing", function h2(){ audio.removeEventListener("playing",h2); stomp(); }); // v9.42：幻影自播一冒头就压
-      setTimeout(stomp, 800);
-    }
-    if(prefixUrls[song.p]){ URL.revokeObjectURL(prefixUrls[song.p]); delete prefixUrls[song.p]; }
-  }).catch(()=>{});
+  stage2(song, pu); // v9.50：换直链流（回退 blob 在 stage2/swapToBlob 内）
 }).catch(async e=>{
   if(playSeq!==mySeq || queue[qi]!==song){ if(loadingSong===song) loadingSong=null; return; } // 已被更新的点播取代
   // 首段也取不到：退回等整曲（v9.30 的路）
@@ -759,6 +828,9 @@ if(loadingSong){ // 正在整曲加载（v9.30）：按钮取消加载意图，�
   loadCancelled=loadingSong; loadingSong=null; playSeq++; loading=false;
   audio.pause(); setPlayStatus(""); renderPlayer();
   return;
+}
+if(audio.ended && queue[qi] && (queue[qi]._onPrefix || queue[qi]._pendingSeek!=null)){ // v9.50：首段假结束/待落位状态下按播放＝从断点续播，不从头
+  const s=queue[qi]; s._resumeAt=(s._pendingSeek!=null ? s._pendingSeek : (audio.currentTime||0)); s._pendingSeek=null; wantPlay=true; return playAt(qi);
 }
 if(loadCancelled && loadCancelled===queue[qi]){ loadCancelled=null; return playAt(qi); }
 if(!audio.src && queue.length) return playAt(0);
@@ -872,6 +944,12 @@ setInterval(()=>{
   if(audio.paused || audio.ended) return;
   if(audio.currentTime>0 && Math.abs(audio.currentTime-lastProgTime)>0.05){ lastProgAt=Date.now(); lastProgTime=audio.currentTime; return; }
   if(Date.now()-lastProgAt<10000) return;
+  // v9.50：直链流卡死 20 秒——有本地整曲就换本地，没有就重连流一次
+  if(song._onStream && Date.now()-lastProgAt>=20000){
+    const t=audio.currentTime||0;
+    if(objCache[song.p]){ song._onStream=false; song._swapAt=Date.now(); audio.src=objCache[song.p]; try{ audio.currentTime=t; }catch(e){} if(wantPlay) audio.play().catch(()=>{}); lastProgAt=Date.now(); return; }
+    if(!song._streamRetry){ song._streamRetry=true; audio.src=songUrl(song); try{ audio.currentTime=t; }catch(e){} if(wantPlay) audio.play().catch(()=>{}); lastProgAt=Date.now(); return; }
+  }
   // v9.49：首段数据先耗尽、整曲还在下载（锁屏限流的典型断点）——元素是"饿着"不是"死了"：
   // 等下载落地由换源接上，别按卡死跳歌；在途就宽容等待，没在途就补发一次下载。
   if(song._onPrefix && !song._swapped){
@@ -1347,9 +1425,22 @@ try{ localStorage.removeItem(DIAG_KEY); }catch(e){} // v9.37：清掉旧诊断�
 }
 
 /* ---------- 启动 ---------- */
+/* v9.50：播放位置存档——每 5 秒记一次；页面被系统重载/重开后恢复到断点（迷你条暂停待播，按播放接着听） */
+setInterval(()=>{ if(!audio.paused && queue[qi] && audio.currentTime>5 && !audio.ended){ try{ localStorage.setItem("zmusic.resume", JSON.stringify({p:queue[qi].p, ct:Math.floor(audio.currentTime), ts:Date.now()})); }catch(e){} } }, 5000);
+audio.addEventListener("ended", ()=>{ try{ localStorage.removeItem("zmusic.resume"); }catch(e){} });
+function tryRestoreResume(){
+  let rec=null; try{ rec=JSON.parse(localStorage.getItem("zmusic.resume")||"null"); }catch(e){}
+  if(!rec || !rec.p || !rec.ct || rec.ct<5 || Date.now()-rec.ts>12*3600*1000) return;
+  const s=CATALOG.find(x=>x.p===rec.p); if(!s) return;
+  queue=[s]; qi=0; s._onStream=true;
+  audio.src=songUrl(s);
+  audio.addEventListener("loadedmetadata", function h(){ audio.removeEventListener("loadedmetadata",h); try{ audio.currentTime=rec.ct; }catch(e){} });
+  renderPlayer(); updateMediaSession(s);
+}
 document.addEventListener("DOMContentLoaded",()=>{
 if(typeof CATALOG==="undefined"||!CATALOG.length){ alert("曲库加载失败"); return;}
 bind(); renderHome();
+tryRestoreResume();
 if("serviceWorker" in navigator){
   navigator.serviceWorker.register("sw.js", {updateViaCache:"none"}).catch(()=>{});
   // SW 就绪后把认证头推过去
