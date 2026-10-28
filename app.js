@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.53 2026-10-28";
+const APP_VER = "v9.54 2026-10-28";
 
 /* v9.43 换域名搬家：新地址带 #mv1=<base64> 打开时，先把旧地址带来的本地数据写入本域名（必须在读 cfg 前） */
 (function(){ try{
@@ -658,19 +658,18 @@ function stage2(song, pu){
     song._pendingSeek=null; song._onPrefix=false; song._onStream=true; song._swapped=true; song._streamRetry=false;
     song._swapAt=Date.now();
     audio.src=songUrl(song);
-    // v9.53：seek 等流的元数据到位再下达、落位后才 play——src 刚换就设 currentTime，WebKit 经 SW
-    // 加载会把 seek 丢掉、从 0 开播（"开头一两秒重复"）；元数据迟迟不到由下方 5 秒健康检查回退 blob。
-    const goS2=()=>{ try{ audio.currentTime=ct; }catch(e){}
-      if(wasPlaying) audio.play().catch(()=>{});
-      else if(pauseGen>pgAtReq){
-        const stomp=()=>{ if(queue[qi]===song && !audio.paused && pauseGen>pgAtReq && userPlayGen===uplAtReq) audio.pause(); };
-        audio.addEventListener("canplay", function h(){ audio.removeEventListener("canplay",h); setTimeout(stomp,50); });
-        audio.addEventListener("playing", function h2(){ audio.removeEventListener("playing",h2); stomp(); });
-        setTimeout(stomp, 800);
-      }
-    };
-    if(audio.readyState>=1) goS2();
-    else audio.addEventListener("loadedmetadata", function hmS2(){ audio.removeEventListener("loadedmetadata",hmS2); goS2(); });
+    try{ audio.currentTime=ct; }catch(e){}
+    if(wasPlaying) audio.play().catch(()=>{});
+    else if(pauseGen>pgAtReq){
+      const stomp=()=>{ if(queue[qi]===song && !audio.paused && pauseGen>pgAtReq && userPlayGen===uplAtReq) audio.pause(); };
+      audio.addEventListener("canplay", function h(){ audio.removeEventListener("canplay",h); setTimeout(stomp,50); });
+      audio.addEventListener("playing", function h2(){ audio.removeEventListener("playing",h2); stomp(); });
+      setTimeout(stomp, 800);
+    }
+    // v9.54 矫正重下：src 刚换就下达的 seek 偶被 WebKit 丢掉（流从 0 开播＝"开头重复"）。
+    // 元数据到位时核对实际位置，偏离目标 >0.7 秒就补下一次——落位正常时是空操作，不必干等元数据才出声。
+    audio.addEventListener("loadedmetadata", function hmS2(){ audio.removeEventListener("loadedmetadata",hmS2);
+      if(queue[qi]===song && song._onStream && Math.abs((audio.currentTime||0)-ct)>0.7){ try{ audio.currentTime=ct; }catch(e){} } });
     if(prefixUrls[song.p]){ URL.revokeObjectURL(prefixUrls[song.p]); delete prefixUrls[song.p]; }
     setTimeout(()=>{ if(queue[qi]===song && song._onStream && audio.readyState<2 && audio.networkState!==2){ song._onStream=false; swapToBlob(song, pgAtReq, uplAtReq, 0, intentPlay); } }, 5000);
     audio.addEventListener("error", function h(){ audio.removeEventListener("error",h); if(queue[qi]===song && song._onStream){ song._onStream=false; swapToBlob(song, pgAtReq, uplAtReq, 0, intentPlay); } });
@@ -735,49 +734,6 @@ if(cached){
   song._pendingSeek=null;
   if(autoplay){ audio.play().then(()=>{ loading=false; setPlayStatus(""); hideToast(); prefetchNext(); ensureQueue(); }).catch(e=>{ loading=false; if(e&&e.name==="NotAllowedError") _resumeOnTap=true; }); }
   else loading=false;
-  return;
-}
-/* v9.53 流优先（低码率格式）：直链从 0 边下边播、没有换源拼接——v9.52 的"开头重复＋停顿"
-   是首段→流拼接的产物（换源 seek 易丢＋换源清空缓冲重攒）。首段改为并行救援：流 4.5 秒内
-   没真出声且首段已到就切首段（之后走原 stage2）；流报错同理；首段也死则整曲 blob 兜底。
-   FLAC 码率（约 1.4Mbps）常高于实际带宽、撑不住实时流，仍走下面的首段打法。 */
-if(!/\.flac$/i.test(song.p||"")){
-  audio.pause(); // 同首段路径：加载新歌先停旧歌
-  loadingSong=song;
-  song._onStream=true; song._swapped=true; song._onPrefix=false;
-  const pgS=pauseGen, upS=userPlayGen, t0S=Date.now();
-  let prefixOU=null, prefixDead=false, settled=false;
-  if(curPrefixCtl) curPrefixCtl.abort();
-  curPrefixCtl=new AbortController();
-  const rescue=()=>{ // 流起不来时的救援（幂等，出声/落定后自动失效）
-    if(settled || playSeq!==mySeq || queue[qi]!==song || song._played) return;
-    if(prefixOU){ settled=true;
-      if(loadingSong===song) loadingSong=null;
-      audio.src=prefixOU; song._onPrefix=true; song._onStream=false;
-      song._pendingSeek=(song._resumeAt!=null ? song._resumeAt : null); song._resumeAt=null;
-      if(objCache[song.p] && objCache[song.p]===prefixOU){ song._swapped=true; song._onPrefix=false; }
-      if(autoplay){ audio.play().then(()=>{ loading=false; setPlayStatus(""); hideToast(); }).catch(e=>{ loading=false; if(e&&e.name==="NotAllowedError") _resumeOnTap=true; }); }
-      else loading=false;
-      if(!song._swapped) stage2(song, prefixOU); // stage2 内部自带 1 秒延时与守卫
-      return;
-    }
-    if(prefixDead){ settled=true; if(loadingSong===song) loadingSong=null; song._onStream=false; song._swapped=false; swapToBlob(song, pgS, upS, 0, autoplay); }
-  };
-  prefixUrl(song, curPrefixCtl).then(pu=>{ prefixOU=pu; if(!song._played && Date.now()-t0S>=4500) rescue(); }).catch(()=>{ prefixDead=true; rescue(); });
-  setTimeout(rescue, 4500);
-  try{ pushAuthToSW(); }catch(e){}
-  audio.src=songUrl(song);
-  if(song._pendingSeek!=null){ const ptS=song._pendingSeek; song._pendingSeek=null; audio.addEventListener("loadedmetadata", function hmS(){ audio.removeEventListener("loadedmetadata",hmS); try{ audio.currentTime=ptS; }catch(e){} }); }
-  else if(song._resumeAt>5){ const rtS=song._resumeAt; song._resumeAt=0; audio.addEventListener("loadedmetadata", function hmS(){ audio.removeEventListener("loadedmetadata",hmS); try{ audio.currentTime=rtS; }catch(e){} }); }
-  audio.addEventListener("error", function heS(){ audio.removeEventListener("error",heS); if(queue[qi]===song && song._onStream && !song._played) rescue(); });
-  if(autoplay){
-    audio.play().then(()=>{ settled=true; if(playSeq!==mySeq || queue[qi]!==song) return; if(loadingSong===song) loadingSong=null; loading=false; setPlayStatus(""); hideToast(); prefetchNext(); ensureQueue(); })
-    .catch(e=>{ if(loadingSong===song) loadingSong=null; loading=false;
-      if(e && e.name==="NotAllowedError"){ _resumeOnTap=true; settled=true; }
-      else if(e && e.name==="AbortError"){ settled=true; } // 加载中被用户暂停：保持暂停
-      else rescue();
-    });
-  } else { if(loadingSong===song) loadingSong=null; loading=false; }
   return;
 }
 /* v9.31 首段秒播（替代 v9.28 整曲优先）：先取开头 2MB 立刻开播，整曲在后台下完后同位置无缝换上。
