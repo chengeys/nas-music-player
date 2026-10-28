@@ -98,10 +98,11 @@
 </div>
 <div id="beautyPanel">
 <div class="row">
-<div class="grp"><span class="lbl">磨皮</span><input id="rgSmooth" type="range" min="0" max="100" value="65"></div>
+<div class="grp"><span class="lbl">磨皮</span><input id="rgSmooth" type="range" min="0" max="100" value="80"></div>
 <div class="grp"><span class="lbl">美白</span><input id="rgWhite" type="range" min="0" max="100" value="45"></div>
 <div class="grp"><button id="btnPeek">按住看原图</button></div>
 </div>
+<div class="row"><span style="font-size:11px;opacity:.55">美颜引擎 A档 v2</span></div>
 </div>
 </div>
 
@@ -290,7 +291,7 @@ const a=document.createElement("a"); a.href=lastUrl; a.download=file.name; docum
 toast("已下载到文件，请到文件里打开再存相册",3200);
 };
 
-/* 美颜引擎 A档（2026-10-28 升级，用户验收静图对比后上线）：多通道 WebGL 实时处理
+/* 美颜引擎 A档 v2（2026-10-28 二次升级：v1 被用户真机实测否——半分辨率模糊半径太小、磨皮没效果；v2 低频层降到 1/8 分辨率＋高频软阈值＋遮罩改从低频层取＋默认磨皮 80）：多通道 WebGL 实时处理
    管线：Pass1/2 半分辨率高斯模糊出低频层 → Pass3 频率分离（皮肤区压高频纹理=真磨皮）
         ＋ YCbCr 肤色遮罩（美白只进皮肤、背景五官不动）＋ LUT 式 S 曲线/白平衡滤镜
    旧版单通道着色器（只有全画面提亮+RGB 倍乘、无磨皮）已废弃；多通道不可用时自动回退单通道保底 */
@@ -322,20 +323,20 @@ const FS_MAIN=[
 "  float y=0.299*c.r+0.587*c.g+0.114*c.b;",
 "  float cr=0.713*(c.r-y)+0.5;",
 "  float cb=0.564*(c.b-y)+0.5;",
-"  float m1=smoothstep(0.50,0.54,cr)*(1.0-smoothstep(0.64,0.68,cr));",
-"  float m2=smoothstep(0.28,0.31,cb)*(1.0-smoothstep(0.47,0.50,cb));",
+"  float m1=smoothstep(0.485,0.525,cr)*(1.0-smoothstep(0.635,0.675,cr));",
+"  float m2=smoothstep(0.27,0.30,cb)*(1.0-smoothstep(0.465,0.50,cb));",
 "  float m3=smoothstep(0.15,0.30,y);",
-"  return clamp(m1*m2*1.6,0.0,1.0)*m3;",
+"  return clamp(m1*m2*2.0,0.0,1.0)*m3;",
 "}",
 "void main(){",
 "  vec3 c=texture2D(tSrc,v).rgb;",
 "  vec3 low=texture2D(tLow,v).rgb;",
-"  float m=skinMask(c);",
+"  float m=skinMask(low);",
 "  vec3 high=c-low;",
-"  float keep=1.0-0.82*uSmooth*m;",
-"  vec3 col=low+high*keep;",
+"  vec3 att=exp(-high*high*70.0);",
+"  vec3 col=low+high*(1.0-0.97*uSmooth*m*att);",
 "  float lift=uWhite*m;",
-"  col+=(1.0-col)*0.10*lift+col*0.13*lift;",
+"  col+=(1.0-col)*0.06*lift+col*0.07*lift;",
 "  col.b=mix(col.b,col.b*1.05+0.008,lift);",
 "  vec3 sc=col*col*(3.0-2.0*col);",
 "  if(uMode==1){ col=mix(col,sc,0.30); float lum=dot(col,vec3(0.299,0.587,0.114)); col=mix(vec3(lum),col,1.10); }",
@@ -431,18 +432,18 @@ function renderLoop(){
     gl.bindTexture(gl.TEXTURE_2D,texSrc);
     try{ gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,cam); }catch(e){}
     if(multiOK){
-      const bw=Math.max(2,cv.width>>1), bh=Math.max(2,cv.height>>1);
-      if(fboA.w!==bw||fboA.h!==bh){ fboA=makeFBO(bw,bh); fboB=makeFBO(bw,bh); if(!fboA||!fboB){ multiOK=false; } }
+      const bw4=Math.max(2,cv.width>>2), bh4=Math.max(2,cv.height>>2), bw8=Math.max(2,cv.width>>3), bh8=Math.max(2,cv.height>>3);
+      if(fboA.w!==bw4||fboA.h!==bh4||fboB.w!==bw8||fboB.h!==bh8){ fboA=makeFBO(bw4,bh4); fboB=makeFBO(bw8,bh8); if(!fboA||!fboB){ multiOK=false; } }
       if(multiOK){
         gl.useProgram(pBlur); bindQuad(pBlur);
         gl.uniform1i(gl.getUniformLocation(pBlur,"t"),0);
-        gl.bindFramebuffer(gl.FRAMEBUFFER,fboA.f); gl.viewport(0,0,bw,bh);
+        gl.bindFramebuffer(gl.FRAMEBUFFER,fboA.f); gl.viewport(0,0,bw4,bh4);
         gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,texSrc);
         gl.uniform2f(gl.getUniformLocation(pBlur,"dir"),1.0/cv.width,0.0);
         gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
-        gl.bindFramebuffer(gl.FRAMEBUFFER,fboB.f); gl.viewport(0,0,bw,bh);
+        gl.bindFramebuffer(gl.FRAMEBUFFER,fboB.f); gl.viewport(0,0,bw8,bh8);
         gl.bindTexture(gl.TEXTURE_2D,fboA.t);
-        gl.uniform2f(gl.getUniformLocation(pBlur,"dir"),0.0,1.0/bh);
+        gl.uniform2f(gl.getUniformLocation(pBlur,"dir"),0.0,1.0/bh4);
         gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
         gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,cv.width,cv.height);
         gl.useProgram(pMain); bindQuad(pMain);
@@ -481,7 +482,7 @@ $("btnBeauty").onclick=()=>{
     $("btnBeauty").classList.add("on"); $("beautyState").textContent="开";
     $("beautyPanel").classList.add("open");
     if(!renderRunning) renderLoop();
-    toast(multiOK?"美颜已开（A档：磨皮+肤色美白），预览就是录出来的样子":"美颜已开（兼容模式），预览就是录出来的样子");
+    toast(multiOK?"美颜已开（A档v2：强磨皮+肤色美白），预览就是录出来的样子":"美颜已开（兼容模式v2），预览就是录出来的样子");
   } else {
     beautyOn=false;
     applyPure();
