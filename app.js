@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.50 2026-10-28";
+const APP_VER = "v9.51 2026-10-28";
 
 /* v9.43 换域名搬家：新地址带 #mv1=<base64> 打开时，先把旧地址带来的本地数据写入本域名（必须在读 cfg 前） */
 (function(){ try{
@@ -1433,9 +1433,14 @@ function tryRestoreResume(){
   if(!rec || !rec.p || !rec.ct || rec.ct<5 || Date.now()-rec.ts>12*3600*1000) return;
   const s=CATALOG.find(x=>x.p===rec.p); if(!s) return;
   queue=[s]; qi=0; s._onStream=true;
-  audio.src=songUrl(s);
-  audio.addEventListener("loadedmetadata", function h(){ audio.removeEventListener("loadedmetadata",h); try{ audio.currentTime=rec.ct; }catch(e){} });
   renderPlayer(); updateMediaSession(s);
+  // 直链要经 SW 带凭据：DOMContentLoaded 时 SW 可能还没接管，裸请求会被 NAS 以 401 拒（实测 error/NO_SOURCE）。
+  // 等 SW ready 并推送凭据后再挂源；3 秒仍无数据再兜底重挂一次。
+  const arm=()=>{ audio.src=songUrl(s);
+    audio.addEventListener("loadedmetadata", function h(){ audio.removeEventListener("loadedmetadata",h); try{ audio.currentTime=rec.ct; }catch(e){} }); };
+  if(navigator.serviceWorker && navigator.serviceWorker.ready) navigator.serviceWorker.ready.then(()=>{ try{ pushAuthToSW(); }catch(e){} arm(); }).catch(()=>arm());
+  else arm();
+  setTimeout(()=>{ if(queue[qi]===s && audio.readyState===0 && !s._played){ try{ pushAuthToSW(); }catch(e){} arm(); } }, 3000);
 }
 document.addEventListener("DOMContentLoaded",()=>{
 if(typeof CATALOG==="undefined"||!CATALOG.length){ alert("曲库加载失败"); return;}
