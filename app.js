@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.48 2026-10-28";
+const APP_VER = "v9.49 2026-10-28";
 
 /* v9.43 换域名搬家：新地址带 #mv1=<base64> 打开时，先把旧地址带来的本地数据写入本域名（必须在读 cfg 前） */
 (function(){ try{
@@ -872,6 +872,12 @@ setInterval(()=>{
   if(audio.paused || audio.ended) return;
   if(audio.currentTime>0 && Math.abs(audio.currentTime-lastProgTime)>0.05){ lastProgAt=Date.now(); lastProgTime=audio.currentTime; return; }
   if(Date.now()-lastProgAt<10000) return;
+  // v9.49：首段数据先耗尽、整曲还在下载（锁屏限流的典型断点）——元素是"饿着"不是"死了"：
+  // 等下载落地由换源接上，别按卡死跳歌；在途就宽容等待，没在途就补发一次下载。
+  if(song._onPrefix && !song._swapped){
+    if(blobInflight[song.p]){ lastProgAt=Date.now(); return; }
+    if(!song._dlRetry){ song._dlRetry=true; blobUrl(song).catch(()=>{}); lastProgAt=Date.now(); return; }
+  }
   if(stallActs>=2) return;
   stallActs++; lastProgAt=Date.now();
   const ou=objCache[song.p];
@@ -952,6 +958,10 @@ document.addEventListener("visibilitychange",()=>{
   const pr=audio.play();
   if(pr&&pr.catch) pr.catch(()=>{ if(wantPlay&&queue[qi]) _resumeOnTap=true; });
   setTimeout(()=>{ if(wantPlay&&queue[qi]&&audio.paused&&!audio.ended&&!loading) playAt(qi); },1500);
+});
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState!=="visible" || !wantPlay) return;
+  if(!audio.paused && queue[qi] && queue[qi]._played) lastProgAt=Date.now()-20000; // 饿停的元素回前台让看门狗立即介入
 });
 let _healTimer=null;
 audio.addEventListener("pause",()=>{
