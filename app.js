@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.47 2026-10-28";
+const APP_VER = "v9.48 2026-10-28";
 
 /* v9.43 换域名搬家：新地址带 #mv1=<base64> 打开时，先把旧地址带来的本地数据写入本域名（必须在读 cfg 前） */
 (function(){ try{
@@ -586,12 +586,22 @@ function prefetchNext(){
     else start();
   }
   // v9.47：再往后一首也预取（后台连播的跑道从 1 首加深到 2 首，锁屏限流时更耐断）
+  // v9.48 教训：dlGate 是单通道串行闸，新任务会掐掉正在下的歌——预取必须严格排队：
+  // 等当前与 +1 都下完（或已缓存）才轮到 +2，绝不抢道（v9.47 初版抢道掐断当前歌整曲，实测致换源迟到）。
   const n2=queue[(qi+2)%queue.length];
   if(n2 && n2!==queue[qi] && n2!==n && !n2._prefetching && !objCache[n2.p]){
     n2._prefetching=true;
-    const start2=()=>{ if(queue[(qi+2)%queue.length]!==n2){ n2._prefetching=false; return; } blobUrl(n2).catch(()=>{}).finally(()=>{ n2._prefetching=false; }); };
-    const n1=queue[(qi+1)%queue.length];
-    if(n1 && blobInflight[n1.p]) blobInflight[n1.p].then(start2, start2); else start2();
+    const start2=()=>{
+      if(queue[(qi+2)%queue.length]!==n2){ n2._prefetching=false; return; }
+      const ahead=[queue[qi], queue[(qi+1)%queue.length]];
+      for(const a of ahead){
+        if(a && a!==n2 && !objCache[a.p] && blobInflight[a.p]){ blobInflight[a.p].then(start2, start2); return; }
+        if(a && a!==n2 && !objCache[a.p] && a._prefetching){ setTimeout(start2, 1500); return; }
+      }
+      blobUrl(n2).catch(()=>{}).finally(()=>{ n2._prefetching=false; });
+    };
+    const cur2=queue[qi];
+    if(cur2 && blobInflight[cur2.p]) blobInflight[cur2.p].then(start2, start2); else start2();
   }
 }
 document.addEventListener("visibilitychange",()=>{
