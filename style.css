@@ -232,9 +232,14 @@ label input{display:block;width:100%;margin-top:6px;background:var(--bg2);
 #fpBigArtist{font-size:14px;color:var(--muted);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 #fpCurLine{font-size:14px;color:#55555c;margin-top:12px;min-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .fp-detail-cover{display:block;width:190px;height:190px;object-fit:cover;border-radius:14px;margin:10px auto 16px;}
-.fp-actions{display:flex;justify-content:center;gap:44px;margin:6px 0;}
+.fp-actions{display:flex;justify-content:center;gap:30px;margin:6px 0;}
 .fp-actions button{background:none;border:none;color:#6d6d72;font-size:24px;padding:6px;}
 .fp-actions button.liked{color:#ff5c7a;}
+.fp-actions button.sleep-on{color:var(--acc);}
+#fpSleep{position:relative;}
+#fpSleepBadge{position:absolute;right:-8px;top:-2px;min-width:22px;height:16px;padding:0 4px;
+  border-radius:999px;background:var(--acc);color:#fff;font-size:9px;line-height:16px;text-align:center;}
+#fpSleepBadge:empty{display:none;}
 #fpLyrics{flex:1;overflow-y:auto;margin:4px 0;min-height:100px;width:100%;box-sizing:border-box;
   -webkit-overflow-scrolling:touch;text-align:left;padding:0 10px;
   -webkit-mask-image:linear-gradient(transparent,#000 15%,#000 85%,transparent);
@@ -298,7 +303,7 @@ body.car #tabbar button{font-size:26px;padding:16px 0;height:auto;}
 body.car #topbar #logo{font-size:22px;}
 
 /* 登录 / 加入歌单弹窗 */
-#loginModal,#addToPlaylistModal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.6);
+#loginModal,#addToPlaylistModal,#sleepModal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.6);
   display:flex;align-items:center;justify-content:center;padding:20px;}
 .modal-card{background:#1c1c24;border:1px solid #2a2a36;border-radius:14px;padding:20px;
   width:100%;max-width:360px;max-height:80vh;overflow-y:auto;}
@@ -306,6 +311,9 @@ body.car #topbar #logo{font-size:22px;}
 .modal-card label{display:block;margin-bottom:12px;font-size:14px;color:var(--muted);}
 .modal-card input{width:100%;margin-top:6px;}
 #loginModal .row .btn,#addToPlaylistModal .row .btn{flex:1;}
+.sleep-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0 4px;}
+.sleep-grid .btn{padding:11px 4px;font-size:14px;}
+#sleepModal .btn.ghost.on{background:var(--acc);color:#fff;}
 
 /* ================= v9.43 主题：浅色（html.light） ================= */
 html.light{
