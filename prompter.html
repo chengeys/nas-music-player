@@ -130,7 +130,7 @@
 <div id="resultPanel" class="panel">
 <h2>录好了</h2>
 <video id="resultVideo" controls playsinline></video>
-<p class="tip">点「保存到相册」后，在弹出的菜单里选「存储视频」；然后去抖音从相册选这条发。</p>
+<p class="tip">在 App 里点「保存到相册」会直接存进系统相册（第一次会弹相册写入权限，点允许）；网页版则会打开分享菜单，选「存储视频」。存好后去抖音从相册选这条发。</p>
 <div class="bar">
 <button id="btnDiscard">重录</button>
 <button id="btnShare" class="primary">保存到相册</button>
@@ -307,10 +307,44 @@ if(!playing) startPlay();
 toast("开始录制，照着白字读");
 };
 $("btnDiscard").onclick=()=>{ $("resultPanel").classList.remove("open"); $("resultVideo").pause(); offset=0; applyOffset(true);};
+/* 保存到相册：App 里走原生插件 PrompterSave 直存系统相册（录像先分片传给原生层落临时文件，再写入相册）；
+   插件不在场（网页版）或直存失败时，回退分享菜单/下载 */
+function nativeSavePlugin(){
+try{
+if(window.Capacitor){
+if(typeof Capacitor.registerPlugin==="function") return Capacitor.registerPlugin("PrompterSave");
+if(Capacitor.Plugins&&Capacitor.Plugins.PrompterSave) return Capacitor.Plugins.PrompterSave;
+}
+}catch(e){}
+return null;
+}
+async function saveVideoNative(blob,filename){
+const P=nativeSavePlugin(); if(!P) return false;
+await P.beginVideoSave({filename});
+try{
+const CH=512*1024;
+for(let off=0;off<blob.size;off+=CH){
+const buf=await blob.slice(off,off+CH).arrayBuffer();
+const bytes=new Uint8Array(buf); let bin="";
+for(let i=0;i<bytes.length;i+=0x8000){ bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000)); }
+await P.appendVideoChunk({data:btoa(bin)});
+}
+await P.finishVideoSave();
+return true;
+}catch(e){
+try{ await P.cancelVideoSave(); }catch(_){}
+throw e;
+}
+}
 $("btnShare").onclick=async()=>{
 if(!lastBlob) return;
 const ext=(lastBlob.type.includes("webm")?"webm":"mp4");
 const file=new File([lastBlob],"口播_"+new Date().toISOString().replace(/[:.]/g,"-")+"."+ext,{type:lastBlob.type});
+if(nativeSavePlugin()){
+toast("正在保存到相册…");
+try{ if(await saveVideoNative(lastBlob,file.name)){ toast("已保存到相册，去相册就能看到",3200); return; } }
+catch(e){ toast("直接保存没成功，改用分享菜单保存",3200); }
+}
 if(navigator.canShare && navigator.canShare({files:[file]})){
 try{ await navigator.share({files:[file]}); return;}catch(e){ if(e && e.name==="AbortError") return;}
 }
