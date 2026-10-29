@@ -1,13 +1,13 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.55 2026-10-28";
+const APP_VER = "v9.56 2026-10-29";
 
 /* v9.43 换域名搬家：新地址带 #mv1=<base64> 打开时，先把旧地址带来的本地数据写入本域名（必须在读 cfg 前） */
 (function(){ try{
   if(location.hash.indexOf("#mv1=")===0){
     const d=JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(5)))));
-    const allow=["zmusic.cfg.v1","zmusic.fav.v1","zmusic.hist.v1","zmusic.cloud.token","zmusic.cloud.user"];
+    const allow=["zmusic.cfg.v1","zmusic.fav.v1","zmusic.hist.v1","zmusic.search.v1","zmusic.sleep.v1","zmusic.cloud.token","zmusic.cloud.user"];
     let n=0; for(const k of allow){ if(typeof d[k]==="string"){ localStorage.setItem(k,d[k]); n++; } }
     history.replaceState(null,"",location.pathname+location.search);
     if(n) sessionStorage.setItem("zmusic.mvmsg","1");
@@ -389,6 +389,87 @@ h.c++; h.l=Date.now(); if(completed) h.done=(h.done||0)+1;
 hist[k]=h; saveHist();
 }
 
+/* ---------- 口味信号：有效收听时长 + 搜索意图（v9.56） ----------
+   旧推荐只数“点开次数”，听 5 秒切掉与完整听完同权，且结果永远按同一
+   顺序取前 20 首，所以看起来从不变化。现在按实际播放进度累计秒数：
+   长听/完播加权，短时跳过降权；搜索词与点开的搜索结果也进入口味画像。 */
+const SEARCH_TASTE_KEY="zmusic.search.v1";
+let searchTaste={terms:{},queries:[]};
+try{ const st=JSON.parse(localStorage.getItem(SEARCH_TASTE_KEY)||"null"); if(st && st.terms) searchTaste=st; }catch(e){}
+function saveSearchTaste(){ try{ localStorage.setItem(SEARCH_TASTE_KEY, JSON.stringify(searchTaste)); }catch(e){} }
+const TASTE_STOP=new Set(["song","music","audio","video","official","the","and","feat","featuring","ft"]);
+function tasteTokens(text){
+  const raw=(text||"").toLowerCase(), out=new Set();
+  for(const w of (raw.match(/[a-z0-9]{2,}/g)||[])) if(!TASTE_STOP.has(w)) out.add(w);
+  for(const seq of (raw.match(/[一-龥]{2,}/g)||[])){
+    if(seq.length<=6) out.add(seq);
+    for(let i=0;i+1<seq.length;i++) out.add(seq.slice(i,i+2));
+  }
+  return [...out];
+}
+function recordSearchIntent(q, weight=1){
+  if(runMode) return;
+  q=(q||"").trim(); if(q.length<2) return;
+  const now=Date.now();
+  for(const t of tasteTokens(q)){
+    const cur=searchTaste.terms[t]||{w:0,ts:0,n:0};
+    cur.w=Math.min(30,(cur.w||0)+weight); cur.ts=now; cur.n=(cur.n||0)+1;
+    searchTaste.terms[t]=cur;
+  }
+  searchTaste.queries=[q].concat((searchTaste.queries||[]).filter(x=>x!==q)).slice(0,20);
+  const terms=Object.entries(searchTaste.terms).sort((a,b)=>((b[1].ts||0)-(a[1].ts||0))||((b[1].w||0)-(a[1].w||0)));
+  searchTaste.terms=Object.fromEntries(terms.slice(0,160));
+  saveSearchTaste();
+}
+let pendingSearchQuery="", pendingSearchAt=0;
+function recordSearchPlay(song){
+  if(!song || !pendingSearchQuery || Date.now()-pendingSearchAt>30*60*1000) return;
+  recordSearchIntent(pendingSearchQuery, 2);
+  pendingSearchQuery=""; pendingSearchAt=0;
+}
+
+let listenSession=null;
+function flushListenSession(finalize=false, completed=false){
+  if(!listenSession) return;
+  const p=listenSession.p, h=hist[p]||{c:0,l:Date.now()};
+  const add=Math.max(0, listenSession.sec-(listenSession.flushed||0));
+  if(add>0){ h.sec=(h.sec||0)+add; listenSession.flushed=listenSession.sec; }
+  if(listenSession.dur) h.dur=listenSession.dur;
+  let ratio=0;
+  if(listenSession.dur>0) ratio=Math.min(1, listenSession.sec/Math.max(1,listenSession.dur));
+  if(completed && ratio>=0.35) ratio=Math.max(ratio,0.85);
+  if(ratio>(h.best||0)) h.best=ratio;
+  if(finalize && !listenSession.counted){
+    if(completed || ratio>=0.5 || listenSession.sec>=45) h.long=(h.long||0)+1;
+    else if(listenSession.sec>=5 && listenSession.sec<20 && ratio<0.25) h.skip=(h.skip||0)+1;
+    listenSession.counted=true;
+  }
+  h.l=Date.now(); hist[p]=h; saveHist();
+  if(finalize) listenSession=null;
+}
+function beginListen(song){
+  if(!song) return;
+  if(listenSession && listenSession.p===song.p) return;
+  flushListenSession(true,false);
+  if(runMode){ listenSession=null; return; }
+  listenSession={p:song.p,lastPos:0,sec:0,flushed:0,maxPos:0,dur:0,counted:false};
+}
+function sampleListen(){
+  if(sleepDeadline && Date.now()>=sleepDeadline){ stopForSleep(); return; }
+  const song=queue[qi]; if(!song) return;
+  if(!listenSession || listenSession.p!==song.p) beginListen(song);
+  if(!listenSession) return;
+  const pos=audio.currentTime||0;
+  if(audio.duration && isFinite(audio.duration)) listenSession.dur=audio.duration;
+  const delta=pos-(listenSession.lastPos||0);
+  if(!audio.paused && delta>0 && delta<=3) listenSession.sec+=delta;
+  if(pos>=0) listenSession.maxPos=Math.max(listenSession.maxPos||0,pos);
+  listenSession.lastPos=pos;
+  if(listenSession.sec-(listenSession.flushed||0)>=10) flushListenSession(false,false);
+}
+window.addEventListener("pagehide",()=>flushListenSession(false,false));
+document.addEventListener("visibilitychange",()=>{ if(document.hidden) flushListenSession(false,false); });
+
 /* ---------- 音频播放 ---------- */
 const audio = new Audio();
 audio.preload="auto";
@@ -401,7 +482,70 @@ const blobInflight={};
    排队中的旧任务直接作废，正在下的若不是这首歌立刻中止让路。
    （v9.28 的纯串行队列会让连点下一首时每首排队挨个下，新点的歌半天轮不上、还在放原来的——用户实测。） */
 let pauseGen=0; // v9.35：pause 事件代次（阶段二换源的防抢播守卫）
-let userPlayGen=0, wantPlay=false; // v9.47：播放意图（区别于元素状态）——后台被系统掐停后靠它自愈；只由用户级动作改写 // v9.42：用户意图代次——只由 togglePlay 的恢复动作 +1。注意不能用 'play' 事件计数：换源幻影自播也会触发 'play' 事件（test31 实证），会把守卫骗下岗
+let userPlayGen=0, wantPlay=false;
+/* ---------- 定时关闭（v9.56） ---------- */
+const SLEEP_KEY="zmusic.sleep.v1";
+let sleepDeadline=0, sleepAfterSong=false, sleepTimer=null;
+try{ const sv=JSON.parse(localStorage.getItem(SLEEP_KEY)||"null"); if(sv){ sleepDeadline=sv.deadline||0; sleepAfterSong=!!sv.afterSong; } }catch(e){}
+function saveSleepState(){ try{ localStorage.setItem(SLEEP_KEY, JSON.stringify({deadline:sleepDeadline, afterSong:sleepAfterSong})); }catch(e){} }
+function sleepRemainingText(){
+  if(sleepAfterSong) return "本曲播完后停";
+  if(!sleepDeadline) return "未设置";
+  const sec=Math.max(0, Math.ceil((sleepDeadline-Date.now())/1000));
+  const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), ss=sec%60;
+  return (h?h+":"+String(m).padStart(2,"0")+":"+String(ss).padStart(2,"0") : m+":"+String(ss).padStart(2,"0")) + " 后停";
+}
+function updateSleepUI(){
+  const active=!!sleepDeadline || sleepAfterSong;
+  const label=active ? sleepRemainingText() : "未设置";
+  const badge=$("fpSleepBadge"); if(badge) badge.textContent=sleepAfterSong?"曲末":(sleepDeadline?Math.max(1,Math.ceil((sleepDeadline-Date.now())/60000))+"m":"");
+  const fp=$("fpSleep"); if(fp){ fp.classList.toggle("sleep-on", active); fp.title="定时关闭："+label; }
+  const sb=$("settingsSleep"); if(sb) sb.textContent="⏰ 定时关闭："+label;
+  const st=$("sleepStatus"); if(st) st.textContent=active?("当前设置："+label):"未设置定时关闭。";
+  document.querySelectorAll("[data-sleep-min]").forEach(b=>{
+    const end=sleepDeadline ? Math.round((sleepDeadline-Date.now())/60000) : 0;
+    b.classList.toggle("on", !sleepAfterSong && !!sleepDeadline && Math.abs(end-Number(b.dataset.sleepMin))<=1);
+  });
+  const sa=$("sleepAfterSong"); if(sa) sa.classList.toggle("on", sleepAfterSong);
+  const off=$("sleepOff"); if(off) off.style.display=active?"":"none";
+}
+function stopForSleep(){
+  sleepDeadline=0; sleepAfterSong=false; saveSleepState();
+  if(sleepTimer){ clearInterval(sleepTimer); sleepTimer=null; }
+  wantPlay=false;
+  try{ audio.pause(); }catch(e){}
+  updateSleepUI();
+  setPlayStatus("定时关闭，已停止播放");
+  toast("⏰ 定时到了，已停止播放", "ok", 3500);
+}
+function armSleepTimer(){
+  if(sleepTimer){ clearInterval(sleepTimer); sleepTimer=null; }
+  if(sleepDeadline){
+    if(sleepDeadline<=Date.now()){ sleepDeadline=0; saveSleepState(); }
+    else sleepTimer=setInterval(()=>{ if(Date.now()>=sleepDeadline) stopForSleep(); else updateSleepUI(); }, 1000);
+  }
+  updateSleepUI();
+}
+function setSleepMinutes(min){
+  sleepAfterSong=false; sleepDeadline=Date.now()+min*60*1000; saveSleepState(); armSleepTimer();
+  toast("⏰ "+min+" 分钟后停止播放", "ok", 2500);
+}
+function setSleepAfterSong(){
+  sleepDeadline=0; sleepAfterSong=true; saveSleepState(); armSleepTimer();
+  toast("⏰ 本曲播完后停止", "ok", 2500);
+}
+function cancelSleep(showToast=true){
+  sleepDeadline=0; sleepAfterSong=false; saveSleepState(); armSleepTimer();
+  if(showToast) toast("已取消定时关闭", "", 1800);
+}
+function consumeSleepAfterSong(){
+  if(!sleepAfterSong) return false;
+  stopForSleep();
+  return true;
+}
+function openSleepModal(){ updateSleepUI(); const m=$("sleepModal"); if(m) m.style.display="flex"; }
+function closeSleepModal(){ const m=$("sleepModal"); if(m) m.style.display="none"; }
+ // v9.47：播放意图（区别于元素状态）——后台被系统掐停后靠它自愈；只由用户级动作改写 // v9.42：用户意图代次——只由 togglePlay 的恢复动作 +1。注意不能用 'play' 事件计数：换源幻影自播也会触发 'play' 事件（test31 实证），会把守卫骗下岗
 /* v9.46：iOS/WebKit 媒体解锁。新域名＝全新站点，元素从没被"手势内播放"解锁过时，
    程序化 play()（点歌后异步加载完再调）会被 NotAllowedError 拦下且被旧代码静默吞掉，
    表现为"选了歌不自动播、按播放键却能播"。两道保险：
@@ -703,6 +847,7 @@ function playAt(i, autoplay=true){
 if(autoplay) wantPlay=true;
 if(i<0||i>=queue.length) return;
 qi=i; const song=queue[qi]; fbRetry=false;
+beginListen(song);
 if(loadingSong===song) return; // 这首正在加载中，重复点不重启（v9.30）
 if(loadCancelled!==song) loadCancelled=null;
 diag("PLAY", song.t + " / " + (song.a || ""));
@@ -942,7 +1087,8 @@ if(!queue.length) return;
 if(audio.currentTime>3){ audio.currentTime=0; return;}
 playAt((qi-1+queue.length)%queue.length);
 }
-audio.addEventListener("ended",()=>{ const s=queue[qi]; if(s) logPlay(s,true);
+audio.addEventListener("ended",()=>{ const s=queue[qi]; flushListenSession(true,true); if(s) logPlay(s,true);
+  if(consumeSleepAfterSong()) return;
   if(s && s._onPrefix && !s._swapped && s._pendingSeek==null) s._pendingSeek=audio.duration||0; // v9.47：首段先播完、整曲还没到（多见于锁屏限流）——不是真结束，等换源落位续播
   if(s && s._pendingSeek!=null && !s._swapped){
     // v9.37：进度被拖到首段之后、整曲还没换上——别跳走，等换源落到目标位续播；45 秒没换上再跳歌兜底
@@ -954,6 +1100,7 @@ audio.addEventListener("ended",()=>{ const s=queue[qi]; if(s) logPlay(s,true);
    先切到后台下好的本地整首续播；没有本地缓存（或切完还卡）就直接跳下一首。
    专治"卡在最后几秒不结束、也不切歌"——数据流尾巴断了时 ended 永不触发的情况 */
 audio.addEventListener("timeupdate",()=>{ if(!audio.paused){ lastProgAt=Date.now(); lastProgTime=audio.currentTime; } });
+audio.addEventListener("timeupdate", sampleListen);
 audio.addEventListener("progress",()=>{ if(!audio.paused) lastProgAt=Date.now(); });
 setInterval(()=>{
   if(!queue.length || qi<0) return;
@@ -1008,6 +1155,7 @@ preSwitch();
 /* 提前切歌：结束前2秒、还在出声时切下一首，iOS 当连续播放放行 */
 function preSwitch(){
   if(audio.paused || !wantPlay || repeatOne) return; // v9.52：暂停中（含用户拖到结尾细听）与单曲循环不提前切
+  if(sleepAfterSong) return; // 定时关闭选了“本曲后停”时不提前切，等本曲真正结束
   const song=queue[qi]; if(!song || song._preSwitched) return;
   if(!audio.duration || audio.duration<10) return;
   const remain=audio.duration-audio.currentTime;
@@ -1025,6 +1173,7 @@ function preSwitch(){
   // 未缓存也提前切到直链——关键是赶在 ended 之前切。iOS 在 ended 之后会收回程序自动播放的资格，
   // 下一首的 play() 被静默扣下、必须手点（用户实测"放完卡住、暂停再播放才走"），提前切即绕开此坑。
   song._preSwitched=true;
+  flushListenSession(true,true);
   logPlay(song,true);
   try{ localStorage.removeItem("zmusic.resume"); }catch(e){}
   qi=ni; ns._swapped=true; ns._onPrefix=false; ns._pendingSeek=null; ns._onStream=!useBlob; ns._dlRetry=0; ns._streamRetry=0; ns._played=false; // v9.52
@@ -1043,7 +1192,7 @@ function preSwitch(){
   if(pr&&pr.then){
     pr.then(()=>{
       loading=false; setPlayStatus(""); hideToast();
-      renderPlayer(); updateMediaSession(ns); logPlay(ns,false);
+      renderPlayer(); updateMediaSession(ns); beginListen(ns); logPlay(ns,false);
       prefetchNext(); ensureQueue();
     }).catch(()=>{ /* 提前切歌失败：多半是 iOS 把 play() 扣下——标记待点播恢复，用户下一次任意点按即接着播；ended→next 与看门狗再兜底 */
       if(queue[qi]===ns) _resumeOnTap=true; });
@@ -1138,7 +1287,7 @@ btn.classList.remove("listening");
 $("voiceHint").textContent="听到："+txt;
 const cleaned=txt.replace(/^(播放|来一首|放一首|唱一首|点一首)/,"").trim();
 $("q").value=cleaned||txt;
-doSearch(true);
+doSearch(true, true);
 };
 rec.onerror=e=>{ btn.classList.remove("listening");
 const err=e.error||"unknown";
@@ -1164,51 +1313,130 @@ $("voiceHint").textContent=msg+"（"+err+"）";};
 rec.onend=()=>btn.classList.remove("listening");
 try{ rec.start();}catch(e){ btn.classList.remove("listening");}
 }
-function doSearch(autoplay){
+function doSearch(autoplay, submitted=false){
 const q=$("q").value.trim();
+pendingSearchQuery=q; pendingSearchAt=Date.now();
+if(submitted) recordSearchIntent(q, 1);
 const list=searchSongs(q);
-renderSongs($("searchList"), list, true);
+renderSongs($("searchList"), list, true, "search");
 window.scrollTo(0,0);
 if(autoplay && list.length){ runMode=false; queue=list.slice(); playAt(0);}
 else if(autoplay){ $("voiceHint").textContent+="（曲库里没找到，换个说法试试）";}
 }
 
-/* ---------- 推荐 ---------- */
-function artistScore(){
-const m={}; let max=0;
-for(const k in hist){
-const s=byPath(k); if(!s||!s.a) continue;
-m[s.a]=(m[s.a]||0)+hist[k].c; if(m[s.a]>max) max=m[s.a];
-}
-return {m,max:max||1};
-}
-function folderScore(){
-const m={}; let max=0;
-for(const k in hist){
-const s=byPath(k); if(!s) continue;
-m[s.f]=(m[s.f]||0)+hist[k].c; if(m[s.f]>max) max=m[s.f];
-}
-return {m,max:max||1};
-}
+/* ---------- 推荐（v9.56：口味画像 + 多样性抽样） ---------- */
 const pathMap={};
 function byPath(p){
 if(!pathMap.built){ for(const s of CATALOG) pathMap[s.p]=s; pathMap.built=true;}
 return pathMap[p];
 }
-function recommend(n=20){
-const {m:am, max:amx}=artistScore(), {m:fm, max:fmx}=folderScore();
-const now=Date.now(), out=[];
-for(const s of CATALOG){
-const h=hist[s.p];
-if(h && now-h.l < 6*3600*1000) continue; // 6小时内听过的不推
-let sc=0;
-if(s.a&&am[s.a]) sc+=3*am[s.a]/amx;
-if(fm[s.f]) sc+=1.5*fm[s.f]/fmx;
-if(!h) sc+=0.4; // 没听过的加权
-if(sc>0) out.push({s,sc});
+function songTasteValue(p){
+  let v=0; const h=hist[p];
+  if(h){
+    const ageDays=Math.max(0,(Date.now()-(h.l||0))/86400000);
+    const decay=Math.pow(0.5, ageDays/45);
+    const sec=h.sec||0;
+    v+=Math.min(6, Math.log1p(sec/30)*2.2);
+    v+=(h.done||0)*2.5;
+    v+=(h.long||0)*1.8;
+    if((h.best||0)>=0.5) v+=1.5; else if((h.best||0)>=0.3) v+=0.5;
+    v+=Math.min(2,(h.c||0)*0.25);
+    v-=(h.skip||0)*2.2;
+    v*=0.35+0.65*decay;
+  }
+  if(fav[p]) v+=5;
+  return v;
 }
-out.sort((a,b)=>b.sc-a.sc);
-return out.slice(0,n).map(x=>x.s);
+function buildTasteProfile(){
+  const artist={}, folder={}, token={}, artistNeg={}, folderNeg={}, tokenNeg={};
+  let amx=0, fmx=0, tmx=0, anx=0, fnx=0, tnx=0;
+  const keys=new Set([].concat(Object.keys(hist), Object.keys(fav)));
+  for(const p of keys){
+    const val=songTasteValue(p); if(!val) continue;
+    const s=byPath(p); if(!s) continue;
+    if(val>0){
+      if(s.a){ artist[s.a]=(artist[s.a]||0)+val; if(artist[s.a]>amx) amx=artist[s.a]; }
+      if(s.f){ folder[s.f]=(folder[s.f]||0)+val; if(folder[s.f]>fmx) fmx=folder[s.f]; }
+      for(const t of tasteTokens((s.t||"")+" "+(s.a||"")+" "+(s.f||""))){
+        token[t]=(token[t]||0)+val*0.35; if(token[t]>tmx) tmx=token[t];
+      }
+    } else {
+      const nv=-val;
+      if(s.a){ artistNeg[s.a]=(artistNeg[s.a]||0)+nv; if(artistNeg[s.a]>anx) anx=artistNeg[s.a]; }
+      if(s.f){ folderNeg[s.f]=(folderNeg[s.f]||0)+nv; if(folderNeg[s.f]>fnx) fnx=folderNeg[s.f]; }
+      for(const t of tasteTokens((s.t||"")+" "+(s.a||"")+" "+(s.f||""))){
+        tokenNeg[t]=(tokenNeg[t]||0)+nv*0.35; if(tokenNeg[t]>tnx) tnx=tokenNeg[t];
+      }
+    }
+  }
+  const now=Date.now();
+  for(const t in (searchTaste.terms||{})){
+    const rec=searchTaste.terms[t], ageDays=Math.max(0,(now-(rec.ts||now))/86400000);
+    const val=(rec.w||0)*1.1*Math.pow(0.5, ageDays/30);
+    if(val<=0) continue;
+    token[t]=(token[t]||0)+val; if(token[t]>tmx) tmx=token[t];
+  }
+  return {artist,folder,token,artistNeg,folderNeg,tokenNeg,amx:amx||1,fmx:fmx||1,tmx:tmx||1,anx:anx||1,fnx:fnx||1,tnx:tnx||1,has:keys.size>0||Object.keys(token).length>0};
+}
+function recommend(n=20, opts={}){
+  const prof=buildTasteProfile(), now=Date.now();
+  const exclude=opts.exclude||new Set(), scored=[];
+  for(const s of CATALOG){
+    if(exclude.has(s.p)) continue;
+    const h=hist[s.p];
+    if(h && now-(h.l||0)<3*3600*1000) continue; // 刚听过的歌先让位给相似歌
+    let sc=0;
+    if(s.a && prof.artist[s.a]) sc+=4.5*prof.artist[s.a]/prof.amx;
+    if(s.f && prof.folder[s.f]) sc+=2.0*prof.folder[s.f]/prof.fmx;
+    let tok=0;
+    for(const t of tasteTokens((s.t||"")+" "+(s.a||"")+" "+(s.f||""))){
+      if(prof.token[t]) tok+=Math.min(1, prof.token[t]/prof.tmx);
+    }
+    sc+=Math.min(2.5, tok*0.55);
+    if(s.a && prof.artistNeg[s.a]) sc-=3.5*prof.artistNeg[s.a]/prof.anx;
+    if(s.f && prof.folderNeg[s.f]) sc-=2.0*prof.folderNeg[s.f]/prof.fnx;
+    let tokNeg=0;
+    for(const t of tasteTokens((s.t||"")+" "+(s.a||"")+" "+(s.f||""))){
+      if(prof.tokenNeg[t]) tokNeg+=Math.min(1, prof.tokenNeg[t]/prof.tnx);
+    }
+    sc-=Math.min(1.5, tokNeg*0.4);
+    if(fav[s.p]) sc+=1.0;
+    if(h){
+      sc+=Math.min(0.4,(h.done||0)*0.1);
+      sc-=Math.min(3,(h.skip||0)*1.4);
+      if((h.sec||0)>=45 || (h.best||0)>=0.5) sc+=0.25;
+    } else sc+=0.35;
+    if(!prof.has) sc=1;
+    scored.push({s,sc:Math.max(0.03,sc)});
+  }
+  scored.sort((a,b)=>b.sc-a.sc);
+  const pool=scored.slice(0, Math.max(120, n*8));
+  const out=[], used=new Set(), artistCnt={}, folderCnt={};
+  const artistCap=Math.max(2, Math.ceil(n/5)), folderCap=Math.max(3, Math.ceil(n/3));
+  function takeWeighted(list, relaxCaps){
+    const cand=list.filter(x=>!used.has(x.s.p) && (relaxCaps || ((artistCnt[x.s.a]||0)<artistCap && (folderCnt[x.s.f]||0)<folderCap)));
+    if(!cand.length) return false;
+    let total=0; const ws=cand.map(x=>{ const w=Math.pow(x.sc,1.55)*(0.85+Math.random()*0.3); total+=w; return w; });
+    let r=Math.random()*total, pick=cand[cand.length-1];
+    for(let i=0;i<cand.length;i++){ r-=ws[i]; if(r<=0){ pick=cand[i]; break; } }
+    used.add(pick.s.p); out.push(pick.s);
+    if(pick.s.a) artistCnt[pick.s.a]=(artistCnt[pick.s.a]||0)+1;
+    if(pick.s.f) folderCnt[pick.s.f]=(folderCnt[pick.s.f]||0)+1;
+    return true;
+  }
+  const reserve=prof.has ? Math.min(5, Math.max(2, Math.floor(n*0.2))) : 0;
+  while(out.length<Math.max(0,n-reserve) && takeWeighted(pool,false)){}
+  while(out.length<Math.max(0,n-reserve) && takeWeighted(pool,true)){}
+  if(reserve){
+    const fresh=scored.filter(x=>!used.has(x.s.p) && !hist[x.s.p] && !(x.s.a && prof.artistNeg[x.s.a]) && !(x.s.f && prof.folderNeg[x.s.f]));
+    for(let i=fresh.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [fresh[i],fresh[j]]=[fresh[j],fresh[i]]; }
+    for(const x of fresh){ if(out.length>=n) break; used.add(x.s.p); out.push(x.s); }
+  }
+  while(out.length<n && takeWeighted(scored,true)){}
+  if(out.length<n){
+    for(const s of CATALOG){ if(out.length>=n) break; if(!used.has(s.p) && !exclude.has(s.p)){ used.add(s.p); out.push(s); } }
+  }
+  return out;
 }
 function recentPlayed(n=10){
 return Object.keys(hist).map(k=>({s:byPath(k),l:hist[k].l}))
@@ -1216,7 +1444,7 @@ return Object.keys(hist).map(k=>({s:byPath(k),l:hist[k].l}))
 }
 
 /* ---------- 渲染 ---------- */
-function renderSongs(el, songs, asQueue){
+function renderSongs(el, songs, asQueue, source=""){
 el.innerHTML="";
 if(!songs.length){ el.innerHTML='<p class="empty">没找到，换个关键词试试</p>'; return;}
 songs.forEach((s,i)=>{
@@ -1224,7 +1452,7 @@ const b=document.createElement("button"); b.className="song";
 b.innerHTML=`<span class="idx">${i+1}</span><span class="tt"><b></b><span></span></span><span class="go">▶</span>`;
 b.querySelector("b").textContent=dispTitle(s);
 b.querySelector(".tt span").textContent=dispArtist(s)+" · "+(s.f||"");
-b.onclick=()=>{ if(asQueue){ runMode=false; queue=songs.slice();} playAt(asQueue?i:queueIndexOf(s));};
+b.onclick=()=>{ if(source==="search") recordSearchPlay(s); if(asQueue){ runMode=false; queue=songs.slice();} playAt(asQueue?i:queueIndexOf(s));};
 el.appendChild(b);
 });
 }
@@ -1329,9 +1557,9 @@ document.querySelectorAll("#tabbar button").forEach(b=>b.onclick=()=>showView(b.
 let deb=null;
 $("q").addEventListener("input",()=>{ clearTimeout(deb);
 deb=setTimeout(()=>doSearch(false),300);});
-$("q").addEventListener("keydown",e=>{ if(e.key==="Enter") doSearch(false);});
+$("q").addEventListener("keydown",e=>{ if(e.key==="Enter") doSearch(false, true);});
 $("micBtn").onclick=voiceSearch;
-$("refreshRec").onclick=()=>{ recCache=[]; recExpanded=false; renderRec(); };
+$("refreshRec").onclick=()=>{ const prev=new Set(recCache.map(s=>s.p)); recCache=recommend(20,{exclude:prev}); recExpanded=false; renderRec(); toast(recCache.length?"已换一批推荐":"暂时没有更多推荐","",1500); };
 $("recMore").onclick=()=>{ recExpanded=!recExpanded; renderRec(); };
 /* 首页快捷入口 */
 document.querySelectorAll(".qq-quick button").forEach(b=>{
@@ -1398,6 +1626,14 @@ $("fpShare").onclick=()=>{
   if(navigator.clipboard) navigator.clipboard.writeText(txt).catch(()=>{});
   toast("已复制："+txt,"",2000);
 };
+const fpSleepBtn=$("fpSleep"); if(fpSleepBtn) fpSleepBtn.onclick=openSleepModal;
+const settingsSleepBtn=$("settingsSleep"); if(settingsSleepBtn) settingsSleepBtn.onclick=openSleepModal;
+document.querySelectorAll("[data-sleep-min]").forEach(b=>{ b.onclick=()=>{ setSleepMinutes(Number(b.dataset.sleepMin)); closeSleepModal(); }; });
+const sleepAfterBtn=$("sleepAfterSong"); if(sleepAfterBtn) sleepAfterBtn.onclick=()=>{ setSleepAfterSong(); closeSleepModal(); };
+const sleepOffBtn=$("sleepOff"); if(sleepOffBtn) sleepOffBtn.onclick=()=>{ cancelSleep(); closeSleepModal(); };
+const sleepCloseBtn=$("sleepClose"); if(sleepCloseBtn) sleepCloseBtn.onclick=closeSleepModal;
+const sleepModalEl=$("sleepModal"); if(sleepModalEl) sleepModalEl.addEventListener("click",e=>{ if(e.target===sleepModalEl) closeSleepModal(); });
+armSleepTimer();
 $("fpMode").onclick=()=>{
   repeatOne=!repeatOne;
   $("fpMode").textContent=repeatOne?"↺¹":"↺"; // v9.40：单色字形（原 emoji 在浅色下是彩色块）
@@ -1408,7 +1644,7 @@ $("fpList").onclick=()=>{
 };
 $("fpQueueClose").onclick=()=>showQueuePanel(false);
 // 设置
-$("clearHist").onclick=()=>{ if(confirm("清除本机所有播放记录？")){ hist={}; saveHist(); renderHome();}};
+$("clearHist").onclick=()=>{ if(confirm("清除本机所有播放记录？推荐也会重置。")){ hist={}; saveHist(); searchTaste={terms:{},queries:[]}; saveSearchTaste(); listenSession=null; renderHome();}};
 $("forceUpdate").onclick=async ()=>{
   if(!confirm("将清除本地缓存并重新加载最新版，继续？")) return;
   toast("正在更新…", "", 0);
@@ -1428,7 +1664,7 @@ $("appVer").textContent=APP_VER;
 /* v9.43 接线：主题三档 / 搬家 / 字形 / 进度条拖动变粗 */
 /* v9.45 首页「每日推荐」特色卡：直接播推荐队列 */
 const featDailyEl=$("featDaily");
-if(featDailyEl) featDailyEl.onclick=()=>{ runMode=false; const recs=recommend(30);
+if(featDailyEl) featDailyEl.onclick=()=>{ runMode=false; const recs=recommend(30,{fresh:true});
   if(recs.length){ queue=recs.slice(); playAt(0); } else toast("多听几首，推荐就来了"); };
 document.querySelectorAll("#themeRow button").forEach(b=>{ b.onclick=()=>{ cfg.theme=b.dataset.theme; saveCfg(); applyTheme(); toast(b.dataset.theme==="auto"?"外观：跟随系统":(b.dataset.theme==="light"?"外观：浅色":"外观：深色"),"ok",1800); }; });
 applyTheme();
@@ -1436,7 +1672,7 @@ if(sessionStorage.getItem("zmusic.mvmsg")){ sessionStorage.removeItem("zmusic.mv
 const mvRow=$("mvRow"), mvHint=$("mvHint");
 if(location.hostname!=="app.ipls.cn"){ if(mvRow) mvRow.style.display="none"; if(mvHint) mvHint.style.display="none"; }
 else if($("mvBtn")){ $("mvBtn").onclick=()=>{
-  const keys=["zmusic.cfg.v1","zmusic.fav.v1","zmusic.hist.v1","zmusic.cloud.token","zmusic.cloud.user"];
+  const keys=["zmusic.cfg.v1","zmusic.fav.v1","zmusic.hist.v1","zmusic.search.v1","zmusic.sleep.v1","zmusic.cloud.token","zmusic.cloud.user"];
   const d={}; for(const k of keys){ const v=localStorage.getItem(k); if(v!=null) d[k]=v; }
   location.href="https://mp3.ipls.cn/#mv1="+btoa(unescape(encodeURIComponent(JSON.stringify(d))));
 }; }
