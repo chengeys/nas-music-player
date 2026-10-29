@@ -18,6 +18,10 @@
   #cameraTools.open { display:flex; }
   body.pure-mode .cameraOnly { display:none !important; }
   body.pure-mode #promptWrap { top:9%; height:64%; }
+  /* 原生相机模式：页面背景透明（原生预览垫在 WebView 底下），藏起网页视频层与画面设置 */
+  html.nativebg, html.nativebg body { background:transparent !important; }
+  body.nativecam #cam, body.nativecam #view { display:none !important; }
+  body.nativecam #camToolsRow { display:none !important; }
   .fbtn.on { background:#31c27c; color:#04240f; font-weight:700; }
   #shade { position:fixed; inset:0; background:linear-gradient(180deg, rgba(0,0,0,.55) 0%, rgba(0,0,0,.25) 30%, rgba(0,0,0,0) 55%, rgba(0,0,0,.45) 100%); pointer-events:none; }
   #promptWrap { position:fixed; left:0; right:0; top:6%; height:44%; overflow:hidden; pointer-events:none;
@@ -91,7 +95,7 @@
 <div class="grp"><span class="lbl">速度</span><input id="speed" type="range" min="10" max="90" value="34"><span class="lbl" id="speedVal"></span></div>
 <div class="grp"><span class="lbl">字号</span><input id="font" type="range" min="22" max="44" value="30"><span class="lbl" id="fontVal"></span></div>
 </div>
-<div class="row cameraOnly">
+<div class="row cameraOnly" id="camToolsRow">
 <span class="lbl">录像模式的辅助设置</span>
 <button id="btnCamTools">画面设置（美颜 / 滤镜）</button>
 </div>
@@ -240,7 +244,9 @@ if(pureOn && !stream){
   const ok=await startCam();
   if(!ok){ toast("摄像头没打开，请允许权限后重试",3200); return; }
 }
-pureOn=!pureOn; applyPure(); toast(pureOn?"纯提词模式：大字滚动，不开摄像头":"录像模式：提词文字叠在镜头上");
+pureOn=!pureOn; applyPure();
+if(nativeCamOn){ if(pureOn){ await nativeCamStop(); } else { try{ await nativeCamStart(); }catch(e){} } }
+toast(pureOn?"纯提词模式：大字滚动，不开摄像头":"录像模式：提词文字叠在镜头上");
 };
 $("btnCamTools").onclick=()=>{ $("cameraTools").classList.toggle("open"); };
 
@@ -258,7 +264,36 @@ toast("已保存，从头开始读");
 };
 
 /* 摄像头与录制 */
+/* 原生相机引擎（App 内插件 PrompterCamera）：在场时启动/预览/录制全走原生管线；
+   网页版仍用 getUserMedia + MediaRecorder，下面的老路径一行不动 */
+let nativeCamOn=false, nativeRecording=false;
+function nativeCamPlugin(){
+try{
+if(window.Capacitor){
+if(typeof Capacitor.registerPlugin==="function") return Capacitor.registerPlugin("PrompterCamera");
+if(Capacitor.Plugins&&Capacitor.Plugins.PrompterCamera) return Capacitor.Plugins.PrompterCamera;
+}
+}catch(e){}
+return null;
+}
+async function nativeCamStart(){
+const P=nativeCamPlugin(); if(!P) return false;
+await P.start({});
+nativeCamOn=true;
+document.documentElement.classList.add("nativebg");
+document.body.classList.add("nativecam");
+return true;
+}
+async function nativeCamStop(){
+const P=nativeCamPlugin(); if(!P) return;
+try{ await P.stop({}); }catch(e){}
+document.body.classList.remove("nativecam");
+document.documentElement.classList.remove("nativebg");
+}
 async function startCam(){
+if(nativeCamPlugin()){
+try{ await nativeCamStart(); stream=stream||{native:true}; return true; }catch(e){ return false; }
+}
 try{
 stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:{ideal:1920},height:{ideal:1080}},audio:true});
 $("cam").srcObject=stream;
@@ -279,7 +314,29 @@ for(const m of cand){ if(!m) return ""; try{ if(MediaRecorder.isTypeSupported(m)
 return "";
 }
 function fmt(s){ return String(Math.floor(s/60)).padStart(2,"0")+":"+String(Math.floor(s%60)).padStart(2,"0");}
-$("btnRec").onclick=()=>{
+$("btnRec").onclick=async()=>{
+if(nativeCamOn){
+const P=nativeCamPlugin();
+if(nativeRecording){
+nativeRecording=false;
+clearInterval(recTimer);
+$("btnRec").classList.remove("rec"); $("recDot").style.display="none";
+toast("正在保存到相册…");
+try{ await P.stopRecording({}); toast("已保存到相册，去相册就能看到",3200); }
+catch(e){ toast("保存失败："+((e&&e.message)||"未知错误"),3600); }
+return;
+}
+try{ await P.startRecording({}); }
+catch(e){ toast("录制启动失败："+((e&&e.message)||"未知错误"),3600); return; }
+nativeRecording=true;
+recStart=Date.now();
+$("btnRec").classList.add("rec"); $("recDot").style.display="flex";
+$("recTime").textContent="00:00";
+recTimer=setInterval(()=>{ $("recTime").textContent=fmt((Date.now()-recStart)/1000);},500);
+if(!playing) startPlay();
+toast("开始录制（原生引擎），照着白字读");
+return;
+}
 if(recorder && recorder.state==="recording"){ recorder.stop(); return;}
 if(!stream){ toast("还没开摄像头，刷新页面重新开启"); return;}
 if(typeof MediaRecorder==="undefined"){ toast("这台设备的浏览器不支持网页录制，改用纯提词+相机录",3600); return;}
