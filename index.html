@@ -15,7 +15,7 @@ if(_tl){document.documentElement.classList.add("light");document.querySelector('
 <meta name="apple-mobile-web-app-title" content="知行音乐">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon.svg">
-<link rel="stylesheet" href="style.css?v=9.55">
+<link rel="stylesheet" href="style.css?v=9.56">
 </head>
 <body>
 <div id="app">
@@ -119,6 +119,11 @@ if(_tl){document.documentElement.classList.add("light");document.querySelector('
       <p class="hint">跟随系统：手机开深色模式就是黑的、关了就是浅的；如果系统里把深色模式设成"日落到日出"自动，就会白天浅、晚上黑。也可以在这里固定一种。</p>
     </div>
     <div class="block">
+      <h2>播放</h2>
+      <button id="settingsSleep" class="btn ghost">⏰ 定时关闭：未设置</button>
+      <p class="hint">睡前听歌可按 10–90 分钟定时，也可以选“本曲播完后停”；播放页点 ⏰ 也能设置。</p>
+    </div>
+    <div class="block">
       <h2>数据</h2>
       <div class="row">
         <button id="clearHist" class="btn ghost danger">清除播放记录</button>
@@ -180,6 +185,7 @@ if(_tl){document.documentElement.classList.add("light");document.querySelector('
     </div>
     <div class="fp-actions">
       <button id="fpLike" title="我喜欢">♡</button>
+      <button id="fpSleep" title="定时关闭">⏰<span id="fpSleepBadge"></span></button>
       <button id="fpAdd" title="加入歌单">＋</button>
       <button id="fpDl" title="详情">ⓘ</button>
       <button id="fpShare" title="分享">↗</button>
@@ -204,6 +210,28 @@ if(_tl){document.documentElement.classList.add("light");document.querySelector('
       <button id="fpList" title="播放列表">☰</button>
     </div>
     <p id="playStatus" class="hint"></p>
+  </div>
+
+  <!-- 定时关闭弹窗 -->
+  <div id="sleepModal" style="display:none">
+    <div class="modal-card">
+      <h2>定时关闭</h2>
+      <p id="sleepStatus" class="hint">未设置定时关闭。</p>
+      <div class="sleep-grid">
+        <button class="btn ghost" data-sleep-min="10">10 分钟</button>
+        <button class="btn ghost" data-sleep-min="20">20 分钟</button>
+        <button class="btn ghost" data-sleep-min="30">30 分钟</button>
+        <button class="btn ghost" data-sleep-min="45">45 分钟</button>
+        <button class="btn ghost" data-sleep-min="60">60 分钟</button>
+        <button class="btn ghost" data-sleep-min="90">90 分钟</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button id="sleepAfterSong" class="btn ghost">本曲播完后停</button>
+        <button id="sleepOff" class="btn ghost danger">取消定时</button>
+      </div>
+      <button id="sleepClose" class="btn" style="margin-top:12px">完成</button>
+      <p class="hint">定时只会暂停播放，不会清掉当前队列；随时可以重新设置或取消。</p>
+    </div>
   </div>
 
   <!-- 登录弹窗 -->
@@ -249,7 +277,7 @@ if(_tl){document.documentElement.classList.add("light");document.querySelector('
 </div>
 
 <script src="catalog.js"></script>
-<script src="cloud.js?v=9.55"></script>
-<script src="app.js?v=9.55"></script>
+<script src="cloud.js?v=9.56"></script>
+<script src="app.js?v=9.56"></script>
 </body>
 </html>
