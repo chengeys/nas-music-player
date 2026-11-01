@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.58 2026-11-01";
+const APP_VER = "v9.59 2026-11-01";
 
 /* v9.43 换域名搬家：新地址带 #mv1=<base64> 打开时，先把旧地址带来的本地数据写入本域名（必须在读 cfg 前） */
 (function(){ try{
@@ -1021,7 +1021,9 @@ playAt(n);
    catalog 每首歌带 b 字段 = 多段实测节拍中值（下载音频多位置取样、aubio 测拍、达标歌再复测确认）；
    达标 = 85–95（每拍两步）或 168–188（每拍一步），正好贴合 180 步频。
    没测出 BPM 的歌没有 b、永不进跑步库；自动同步新入的歌暂时也没 b，等下次实测补数后才进。 */
-function bpmFit(b){ return b!=null && ((b>=85&&b<=95)||(b>=168&&b<=188)); }
+/* 达标线：85–96（每拍两步）或 168–188（每拍一步）。上沿原为 95，2026-11-01 用户批准放宽到 96
+   （"超一点点的可以加进去"）；95–96 段的 39 首已逐首补测，读数稳定的 30 首才写了 b，读数乱跳的已摘除 b、仍不入池。 */
+function bpmFit(b){ return b!=null && ((b>=85&&b<=96)||(b>=168&&b<=188)); }
 let runMode=false;
 function shuffleArr(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 function runFitPool(exclude){
