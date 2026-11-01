@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.57 2026-10-29";
+const APP_VER = "v9.58 2026-11-01";
 
 /* v9.43 换域名搬家：新地址带 #mv1=<base64> 打开时，先把旧地址带来的本地数据写入本域名（必须在读 cfg 前） */
 (function(){ try{
@@ -1017,56 +1017,40 @@ const n=(qi+1)%queue.length;
 playAt(n);
 }
 /* ---------- 跑步模式 · 180 步频 ---------- */
-/* 已知 BPM 曲目表（关键词→BPM）：90 左右 = 每拍两步，正好 180 步频；180 左右 = 每拍一步 */
-/* 已知 BPM 曲目表（关键词→BPM）：85-95 的歌每拍两步、168-188 的歌每拍一步，都贴合 180 步频。
-   表里有的歌库里暂时没有，用户以后往 NAS 加了这些歌会自动匹配上。 */
-const RUN_BPM={"faded":90,"cheap thrills":90,"despacito":89,"peaches":90,"starboy":93,"centuries":88,
-"we are never":86,"sing me to sleep":85,"heathens":90,"closer":95,"孤勇者":89,"hall of fame":85,
-"cold water":93,"all we know":90,"eastside":89,"bad liar":88,"roar":90,"africa":93,"back in black":92,
-"diamonds":92,"umbrella":87,"as it was":174,"blinding lights":171,"bad blood":170,"till i collapse":171,"american idiot":186};
-const RUN_FOLDERS=["10.欧美节奏控(清爽唤醒活力)(100首)","03-抖音热火DJ中英文嗨曲(240首)","20.精品中文DJ精选(200首)","18.百大DJ(电音之魂)(88首)","19.工体DJ(京城工体)(100首)","14.DJ超嗨电音夜店音乐DJ(104首)","20261007今日全网热门精选优质爆火歌曲"];
+/* 跑步180曲库（v9.58 起）：2026-11-01 全库实测 BPM 定案。
+   catalog 每首歌带 b 字段 = 多段实测节拍中值（下载音频多位置取样、aubio 测拍、达标歌再复测确认）；
+   达标 = 85–95（每拍两步）或 168–188（每拍一步），正好贴合 180 步频。
+   没测出 BPM 的歌没有 b、永不进跑步库；自动同步新入的歌暂时也没 b，等下次实测补数后才进。 */
+function bpmFit(b){ return b!=null && ((b>=85&&b<=95)||(b>=168&&b<=188)); }
 let runMode=false;
 function shuffleArr(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
-function runStrictSongs(){
-  const byKw={};
-  CATALOG.forEach(s=>{
-    const key=(s.t+" "+s.a).toLowerCase();
-    for(const kw in RUN_BPM){
-      if(key.includes(kw)){
-        const b=RUN_BPM[kw];
-        if((b>=85&&b<=95)||(b>=168&&b<=188)){ (byKw[kw]=byKw[kw]||[]).push(s); }
-        break;
-      }
-    }
-  });
+function runFitPool(exclude){
+  const groups={};
+  for(const s of CATALOG){
+    if(!bpmFit(s.b)) continue;
+    if(exclude && exclude.has(s.p)) continue;
+    const id=(s.t+"|"+s.a).toLowerCase();
+    (groups[id]=groups[id]||[]).push(s);
+  }
   const out=[];
-  for(const kw in byKw){
-    // 同一首歌优先留原版（标题不带 Remix/Live/3D 等字样的），同名同歌手去重，最多 2 个版本
-    const clean=byKw[kw].filter(s=>!/remix|live|3d|环绕|震胎|dj版/i.test(s.t+" "+s.p));
-    const seen=new Set(), picked=[];
-    for(const s of (clean.length?clean:byKw[kw])){
-      const id=(s.t+"|"+s.a).toLowerCase();
-      if(seen.has(id)) continue;
-      seen.add(id); picked.push(s);
-      if(picked.length>=2) break;
-    }
-    out.push(...picked);
+  for(const id in groups){
+    // 同名同歌手优先原版（标题不带 Remix/Live/3D 等），最多留 2 个版本
+    const g=groups[id];
+    const clean=g.filter(s=>!/remix|live|3d|环绕|震胎|dj版/i.test(s.t+" "+s.p));
+    out.push(...(clean.length?clean:g).slice(0,2));
   }
   return out;
 }
-function runEnergySongs(exclude,n){
-  const pool=CATALOG.filter(s=>RUN_FOLDERS.includes(s.f) && !exclude.has(s.p));
-  return shuffleArr(pool.slice()).slice(0,n);
-}
+function runStrictSongs(){ return runFitPool(null); }
+function runEnergySongs(exclude,n){ return shuffleArr(runFitPool(exclude).slice()).slice(0,n); }
 function startRunRadio(){
   if(!CATALOG.length){ toast("曲库还没加载完，稍等一下","err",2500); return; }
-  const strict=shuffleArr(runStrictSongs());
-  const seen=new Set(strict.map(s=>s.p));
-  const fill=runEnergySongs(seen, Math.max(0,40-strict.length));
-  queue=strict.concat(fill);
+  const pool=runFitPool(null);
+  if(!pool.length){ toast("跑步歌库暂时没有可用歌曲","err",2500); return; }
+  queue=shuffleArr(pool.slice()).slice(0,60);
   runMode=true;
   playAt(0);
-  toast("🏃 跑步180开跑：共 "+queue.length+" 首连播，其中 "+strict.length+" 首 BPM 与 180 步频精准贴合，其余为节奏燃曲","",5000);
+  toast("🏃 跑步180开跑：共 "+queue.length+" 首连播，全部为实测 BPM 贴合 180 步频的歌曲（达标池共 "+pool.length+" 首）","",5000);
 }
 /* 队列剩3首时提前接歌，保证不断流；跑步模式下接的也是节奏曲 */
 function ensureQueue(){
