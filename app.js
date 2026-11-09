@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.61 2026-11-09";
+const APP_VER = "v9.62 2026-11-09";
 
 /* v9.43 换域名搬家：新地址带 #mv1=<base64> 打开时，先把旧地址带来的本地数据写入本域名（必须在读 cfg 前） */
 (function(){ try{
@@ -1608,9 +1608,12 @@ $("fpDl").onclick=()=>{ const s=queue[qi]; if(s) renderDetail(s); fpSetView("det
 $("fpCoverWrap").onclick=()=>fpSetView("lyrics"); // v9.39：点唱片卡看歌词（同参考视频）
 $("fpShare").onclick=()=>{
   const song=queue[qi]; if(!song) return;
-  const txt=`${dispTitle(song)} - ${dispArtist(song)}`;
-  if(navigator.clipboard) navigator.clipboard.writeText(txt).catch(()=>{});
-  toast("已复制："+txt,"",2000);
+  // v9.62 单曲直达链接：?s= 歌的相对路径（去掉 /music/ 前缀），对方打开直接落到这首歌
+  const link="https://mp3.ipls.cn/?s="+encodeURIComponent(song.p.replace(/^\/music\//,""));
+  const data={title:"知行音乐", text:"🎵 "+dispTitle(song)+" - "+dispArtist(song), url:link};
+  if(navigator.share){ navigator.share(data).catch(()=>{}); }
+  else if(navigator.clipboard){ navigator.clipboard.writeText(data.text+"\n"+link).then(()=>toast("分享链接已复制，发给朋友就能直接打开这首歌","",2600)).catch(()=>toast(link,"",4500)); }
+  else toast(link,"",4500);
 };
 const fpSleepBtn=$("fpSleep"); if(fpSleepBtn) fpSleepBtn.onclick=openSleepModal;
 const settingsSleepBtn=$("settingsSleep"); if(settingsSleepBtn) settingsSleepBtn.onclick=openSleepModal;
@@ -1675,6 +1678,28 @@ try{ localStorage.removeItem(DIAG_KEY); }catch(e){} // v9.37：清掉旧诊断�
 /* v9.50：播放位置存档——每 5 秒记一次；页面被系统重载/重开后恢复到断点（迷你条暂停待播，按播放接着听） */
 setInterval(()=>{ if(!audio.paused && queue[qi] && audio.currentTime>5 && !audio.ended){ try{ localStorage.setItem("zmusic.resume", JSON.stringify({p:queue[qi].p, ct:Math.floor(audio.currentTime), ts:Date.now()})); }catch(e){} } }, 5000);
 audio.addEventListener("ended", ()=>{ try{ localStorage.removeItem("zmusic.resume"); }catch(e){} });
+/* v9.62 单曲直达：打开 ?s=<相对路径> 时直接落到那首歌并开播（优先于断点恢复）。
+   冷启动挂源要等 SW 接管+推凭据，沿用 tryRestoreResume 的等 ready 口径，另加 1.5 秒兜底。 */
+function openSharedSong(){
+  let q=null;
+  try{ q=new URLSearchParams(location.search).get("s"); }catch(e){}
+  if(!q) return false;
+  let path=q; if(path.charAt(0)!=="/") path="/music/"+path.replace(/^\/+/,"");
+  const song=CATALOG.find(x=>x.p===path);
+  try{ history.replaceState(null,"",location.pathname); }catch(e){}
+  if(!song){ toast("朋友分享的这首歌没找到（可能已改名或下架）","err",3500); return true; }
+  queue=[song]; qi=0; runMode=false;
+  renderPlayer(); updateMediaSession(song);
+  $("fullPlayer").style.display="flex"; fpSetView("disc");
+  toast("已打开分享的歌曲：《"+dispTitle(song)+"》","",3000);
+  let started=false;
+  const go=()=>{ if(started) return; started=true; try{ playAt(0); }catch(e){} };
+  if(navigator.serviceWorker && navigator.serviceWorker.ready){
+    navigator.serviceWorker.ready.then(()=>{ try{ pushAuthToSW(); }catch(e){} go(); }).catch(go);
+    setTimeout(go, 1500);
+  } else go();
+  return true;
+}
 function tryRestoreResume(){
   let rec=null; try{ rec=JSON.parse(localStorage.getItem("zmusic.resume")||"null"); }catch(e){}
   if(!rec || !rec.p || !rec.ct || rec.ct<5 || Date.now()-rec.ts>12*3600*1000) return;
@@ -1692,7 +1717,7 @@ function tryRestoreResume(){
 document.addEventListener("DOMContentLoaded",()=>{
 if(typeof CATALOG==="undefined"||!CATALOG.length){ alert("曲库加载失败"); return;}
 bind(); renderHome();
-tryRestoreResume();
+if(!openSharedSong()) tryRestoreResume();
 if("serviceWorker" in navigator){
   navigator.serviceWorker.register("sw.js", {updateViaCache:"none"}).catch(()=>{});
   // SW 就绪后把认证头推过去
