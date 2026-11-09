@@ -1,7 +1,7 @@
 /* 知行音乐 Service Worker v1 */
-const CACHE = "zmusic-v92";
+const CACHE = "zmusic-v93";
 // 注意：catalog.js 不预缓存（走网络优先），避免大文件导致安装失败
-const SHELL = ["./","./index.html","./style.css?v=9.57","./app.js?v=9.57","./cloud.js?v=9.57","./manifest.json","./icon.svg"];
+const SHELL = ["./","./index.html","./style.css?v=9.60","./app.js?v=9.60","./cloud.js?v=9.60","./manifest.json","./icon.svg"];
 
 // NAS 认证头（由页面 postMessage 传入）
 // v9.12 起同步持久化到 IndexedDB：SW 内存变量在 SW 被系统回收重启后会清零
@@ -93,9 +93,11 @@ self.addEventListener("fetch", e=>{
     return;
   }
   // 曲库每次走网络拿最新，失败回退缓存
+  // v9.60：fetch 必须带 cache:"no-cache" 强制回源校验——catalog.js 的响应头带 max-age=14400，
+  // 默认 fetch 会被浏览器 HTTP 缓存截胡（最长 4 小时不回源），新歌入库后手机上死活刷不出来（2026-11-09 实测）。
   if(u.pathname.endsWith("catalog.js")){
     e.respondWith(
-      fetch(e.request).then(r=>{
+      fetch(e.request, {cache: "no-cache"}).then(r=>{
         if(r.ok){ const cp=r.clone();
           caches.open(CACHE).then(c=>c.put(e.request,cp)).catch(()=>{}); }
         return r;
