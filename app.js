@@ -1,7 +1,7 @@
 /* 知行音乐 v1 — NAS 私有曲库播放器 */
 "use strict";
 const $ = id => document.getElementById(id);
-const APP_VER = "v9.63 2026-11-09";
+const APP_VER = "v9.64 2026-11-09";
 
 /* v9.43 换域名搬家：新地址带 #mv1=<base64> 打开时，先把旧地址带来的本地数据写入本域名（必须在读 cfg 前） */
 (function(){ try{
@@ -1524,6 +1524,7 @@ $("fpArtist").textContent=dispArtist(s);
 if($("fpBigTitle")){ $("fpBigTitle").textContent=dispTitle(s); $("fpBigArtist").textContent=dispArtist(s); } // v9.39 唱片视图大标题
 renderDetail(s);
 syncPlayBtns();
+syncSongUrl(s);
 }
 function syncPlayBtns(){
 const ic=audio.paused?"▶":"⏸\uFE0E";
@@ -1692,6 +1693,17 @@ function songCode(p){
   const A="0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
   let out=""; do{ out=A[Number(h%62n)]+out; h/=62n; }while(h>0n);
   return out.padStart(9,"0");
+}
+/* v9.64 地址栏跟随当前歌曲：播到哪首，URL 就换成哪首的短码链接（replaceState，不污染历史记录），
+   用户直接复制地址栏就能分享；标题也带上歌名。renderPlayer 是所有切歌路径的共同出口，挂在那里。 */
+function syncSongUrl(song){
+  if(!song || !song.p) return;
+  try{
+    const want="?s="+songCode(song.p);
+    if(location.search!==want) history.replaceState(null,"",location.pathname+want);
+    const t="🎵 "+dispTitle(song)+" - "+dispArtist(song)+" · 知行音乐";
+    if(document.title!==t) document.title=t;
+  }catch(e){}
 }
 /* v9.62 单曲直达：打开 ?s=<相对路径> 时直接落到那首歌并开播（优先于断点恢复）。
    冷启动挂源要等 SW 接管+推凭据，沿用 tryRestoreResume 的等 ready 口径，另加 1.5 秒兜底。 */
