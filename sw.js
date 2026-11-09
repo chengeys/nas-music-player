@@ -1,7 +1,7 @@
 /* 知行音乐 Service Worker v1 */
-const CACHE = "zmusic-v93";
+const CACHE = "zmusic-v94";
 // 注意：catalog.js 不预缓存（走网络优先），避免大文件导致安装失败
-const SHELL = ["./","./index.html","./style.css?v=9.60","./app.js?v=9.60","./cloud.js?v=9.60","./manifest.json","./icon.svg"];
+const SHELL = ["./","./index.html","./style.css?v=9.61","./app.js?v=9.61","./cloud.js?v=9.61","./manifest.json","./icon.svg"];
 
 // NAS 认证头（由页面 postMessage 传入）
 // v9.12 起同步持久化到 IndexedDB：SW 内存变量在 SW 被系统回收重启后会清零
@@ -96,13 +96,19 @@ self.addEventListener("fetch", e=>{
   // v9.60：fetch 必须带 cache:"no-cache" 强制回源校验——catalog.js 的响应头带 max-age=14400，
   // 默认 fetch 会被浏览器 HTTP 缓存截胡（最长 4 小时不回源），新歌入库后手机上死活刷不出来（2026-11-09 实测）。
   if(u.pathname.endsWith("catalog.js")){
-    e.respondWith(
-      fetch(e.request, {cache: "no-cache"}).then(r=>{
+    e.respondWith((async()=>{
+      try{
+        // v9.61：给回源地址加"分钟桶"参数，让每一分钟的曲库都是一个新 URL——
+        // 浏览器缓存、入口 Worker 的子请求缓存、Pages 源站缓存，任何一层都没法拿旧副本顶包
+        // （v9.60 的 no-cache 只解决了浏览器那一层，服务端缓存仍会用旧 ETag 回 304，用户实测仍是旧曲库）。
+        const fu=new URL(e.request.url);
+        fu.search="?b="+Math.floor(Date.now()/60000);
+        const r=await fetch(fu, {cache: "no-store"});
         if(r.ok){ const cp=r.clone();
           caches.open(CACHE).then(c=>c.put(e.request,cp)).catch(()=>{}); }
         return r;
-      }).catch(()=>caches.match(e.request))
-    );
+      }catch(err){ return caches.match(e.request); }
+    })());
     return;
   }
   e.respondWith(
